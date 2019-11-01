@@ -17,9 +17,9 @@ import gluonnlp as nlp
 from XLNet_classifier import XLNetClassifier
 from transformer import model
 
-os.symlink('../bert/data/classification', './data/classification')
+sys.path.append('../bert/data')
 #pylint: disable=wrong-import-position
-from data.classification import MRPCTask, QQPTask, RTETask, STSBTask, SSTTask, \
+from classification import MRPCTask, QQPTask, RTETask, STSBTask, SSTTask, \
      QNLITask, CoLATask, MNLITask, WNLITask, XNLITask, LCQMCTask, ChnSentiCorpTask
 from data.transform import XLNetDatasetTransform
 
