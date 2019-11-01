@@ -194,7 +194,7 @@ np.random.seed(args.seed)
 random.seed(args.seed)
 mx.random.seed(args.seed)
 
-backend = args.comm_backend
+
 num_workers = 0
 ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
