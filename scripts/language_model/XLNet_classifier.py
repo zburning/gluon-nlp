@@ -21,7 +21,7 @@ class XLNetClassifier(Block):
             self.pooler = nn.Dense(units=units, flatten=False, activation='tanh', prefix=prefix)
 
     def __call__(self, inputs, token_types, valid_length=None, mems=None):
-        # pylint: disable=dangerous-default-value, arguments-differ
+        # pylint: disable=arguments-differ
         """Generate the unnormalized score for the given the input sequences.
 
         Parameters
@@ -48,7 +48,6 @@ class XLNetClassifier(Block):
         """
         # for xlnet, we take the last hidden state
         outputs = sequence.slice(begin=(0, -1, 0), end=(None, -2, None), step=(None, -1, None))
-        #print("pooling: ", outputs.shape)
         outputs = outputs.reshape(shape=(-1, self._units))
         return self.pooler(outputs)
 

@@ -16,6 +16,9 @@ from mxnet import gluon
 import gluonnlp as nlp
 from XLNet_classifier import XLNetClassifier
 from transformer import model
+
+os.symlink('../bert/data/classification', './data/classification')
+#pylint: disable=wrong-import-position
 from data.classification import MRPCTask, QQPTask, RTETask, STSBTask, SSTTask, \
      QNLITask, CoLATask, MNLITask, WNLITask, XNLITask, LCQMCTask, ChnSentiCorpTask
 from data.transform import XLNetDatasetTransform
@@ -158,18 +161,9 @@ parser.add_argument(
          'The provided value is the patience. ')
 
 
-parser.add_argument('--comm_backend', type=str, default='device',
-                    choices=['horovod', 'dist_sync_device', 'device'],
-                    help='Communication backend. Only have been tested on device yet.')
-
 args = parser.parse_args()
 
-if args.comm_backend == 'horovod':
-    try:
-        import horovod.mxnet as hvd
-    except ImportError:
-        logging.info('horovod must be installed.')
-        sys.exit()
+
 
 def split_and_load(arrs, ctx):
     """split and load arrays to a list of contexts"""
@@ -201,7 +195,7 @@ random.seed(args.seed)
 mx.random.seed(args.seed)
 
 backend = args.comm_backend
-num_workers = args.num_workers
+num_workers = 0
 ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
 task = tasks[task_name]
@@ -320,7 +314,7 @@ def preprocess_data(_tokenizer, _task, _batch_size, _dev_batch_size, max_len, _v
     # data loader for training
     loader_train = gluon.data.DataLoader(
         dataset=data_train,
-        num_workers= num_workers,
+        num_workers=num_workers,
         batch_sampler=batch_sampler,
         batchify_fn=batchify_fn)
 
@@ -384,7 +378,7 @@ def test(loader_test, segment):
         out_list = []
         for splited_data in data_list:
             input_ids, valid_length, segment_ids = splited_data
-            out = model(input_ids, valid_length, segment_ids, None)
+            out = model(input_ids, segment_ids, valid_length=valid_length)
             out_list.append(out)
         out_list = np.vstack([o.asnumpy() for o in out_list])
         if not task.class_labels:
@@ -502,7 +496,7 @@ def train(metric):
                         out = model(input_ids, segment_ids, valid_length=valid_length)
                         out_list.append(out)
                         label_list.append(label)
-                        batch_loss.append(loss_function(out, label))
+                        batch_loss.append(loss_function(out, label).mean())
                 # update
                 if not accumulate or (batch_id + 1) % accumulate == 0:
                     trainer.allreduce_grads()
@@ -580,7 +574,8 @@ def evaluate(loader_dev, metric, segment):
             out = model(input_ids, segment_ids, valid_length=valid_length)
             out_list.append(out)
             label_list.append(label)
-            batch_loss.append(loss_function(out, label))
+            batch_loss.append(loss_function(out, label).mean())
+            #batch_loss.append(loss_function(out, label).means())
 
         batch_loss = sum([ls.asscalar() for ls in batch_loss])
         step_loss += batch_loss

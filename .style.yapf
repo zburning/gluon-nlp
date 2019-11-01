@@ -1,0 +1,3 @@
+[style]
+split_before_named_assigns = false
+column_limit = 100
