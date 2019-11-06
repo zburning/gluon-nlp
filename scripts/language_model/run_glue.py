@@ -44,17 +44,17 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('--epochs', type=int, default=3, help='number of epochs.')
 
-parser.add_argument('--batch_size', type=int, default=32,
+parser.add_argument('--batch_size', type=int, default=128,
                     help='Batch size. Number of examples per gpu in a minibatch.')
 
-parser.add_argument('--dev_batch_size', type=int, default=8,
+parser.add_argument('--dev_batch_size', type=int, default=32,
                     help='Batch size for dev set and test set')
 
-parser.add_argument('--lr', type=float, default=5e-5, help='Initial learning rate')
+parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
 
 parser.add_argument('--epsilon', type=float, default=1e-6,
                     help='Small value to avoid division by 0')
-parser.add_argument('--warmup_ratio', type=float, default=0.1,
+parser.add_argument('--warmup_ratio', type=float, default=0,
                     help='ratio of warmup steps used in NOAM\'s stepsize schedule')
 parser.add_argument('--log_interval', type=int, default=10, help='report interval')
 parser.add_argument('--max_len', type=int, default=128, help='Maximum length of the sentence pairs')
@@ -76,6 +76,7 @@ parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
 parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
+                    choices=['xlnet_cased_l24_h1024_a16','xlnet_cased_l12_h768_a12'],
                     help='The name of pre-trained XLNet model to fine-tune')
 
 parser.add_argument('--dataset', type=str, default='126gb',
@@ -178,6 +179,7 @@ else:
     num_classes = len(task.class_labels)
     loss_function = gluon.loss.SoftmaxCELoss()
 # reuse the XLnetClassifier class with num_classes=1 for regression
+print("units: ", xlnet_base._net._units)
 model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0.1,
                         num_classes=num_classes)
 
