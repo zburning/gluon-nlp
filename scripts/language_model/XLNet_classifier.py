@@ -44,9 +44,9 @@ class XLNetClassifier(Block):
     def _apply_pooling(self, sequence):
         """Generate the representation given the inputs.
 
-        This is used for pre-training or fine-tuning a BERT model.
+        This is used for pre-training or fine-tuning a XLNet model.
         """
-        # for xlnet, we take the last hidden state
+        # Note that we are using left pad so we always take the last hidden state
         outputs = sequence.slice(begin=(0, -1, 0), end=(None, -2, None), step=(None, -1, None))
         outputs = outputs.reshape(shape=(-1, self._units))
         return self.pooler(outputs)
@@ -82,8 +82,6 @@ class XLNetClassifier(Block):
         outputs : NDArray
             Shape (batch_size, num_classes)
         """
-        #print(inputs)
-        #print(inputs.shape)
         valid_length_start = inputs.shape[1] - valid_length
         attention_mask = self._padding_mask(inputs, valid_length_start).astype('float32')
         output, _ = self.xlnet(inputs, token_types, mems, attention_mask)
