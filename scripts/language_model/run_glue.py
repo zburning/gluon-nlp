@@ -118,9 +118,13 @@ logger.setLevel(logging.INFO)
 logging.captureWarnings(True)
 handler = logging.FileHandler("log.txt")
 handler.setLevel(logging.INFO)
+handler2 = logging.StreamHandler()
+handler2.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
+handler2.setFormatter(formatter)
 logger.addHandler(handler)
+logger.addHandler(handler2)
 logging.info(args)
 
 log_interval = args.log_interval * args.accumulate if args.accumulate else args.log_interval
@@ -148,20 +152,15 @@ if args.dtype == 'float16':
     amp.init()
 
 # model and loss
-only_inference = args.only_inference
-model_name = args.model
-dataset = args.dataset
-
-model_parameters = args.model_parameters
-if only_inference and not model_parameters:
+if args.only_inference and not args.model_parameters:
     warnings.warn('model_parameters is not set. '
                   'Randomly initialized model will be used for inference.')
 
 get_pretrained = True
 
 get_model_params = {
-    'name': model_name,
-    'dataset_name': dataset,
+    'name': args.model_name,
+    'dataset_name': args.dataset,
     'pretrained': get_pretrained,
     'ctx': ctxs,
     'use_decoder': False,
@@ -185,16 +184,16 @@ model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0.1,
 num_ctxes = len(ctxs)
 
 # initialize classifier
-if not model_parameters:
+if not args.model_parameters:
     model.classifier.initialize(init=initializer, ctx=ctxs)
     model.pooler.initialize(init=initializer, ctx=ctxs)
 
 # load checkpointing
 output_dir = args.output_dir
 
-if model_parameters:
-    logging.info('loading model params from %s', model_parameters)
-    nlp.utils.load_parameters(model, model_parameters, ctx=ctxs, cast_dtype=True)
+if args.model_parameters:
+    logging.info('loading model params from %s', args.model_parameters)
+    nlp.utils.load_parameters(model, args.model_parameters, ctx=ctxs, cast_dtype=True)
 
 nlp.utils.mkdir(output_dir)
 
@@ -203,7 +202,7 @@ model.hybridize(static_alloc=True)
 loss_function.hybridize(static_alloc=True)
 
 # data processing
-do_lower_case = 'uncased' in dataset
+do_lower_case = 'uncased' in args.dataset
 
 
 def preprocess_data(_tokenizer, _task, _batch_size, _dev_batch_size, max_len, _vocab, pad=False):
@@ -342,7 +341,7 @@ def log_eval(batch_id, batch_num, metric, step_loss, _log_interval):
 
 def train(metric):
     """Training function."""
-    if not only_inference:
+    if not args.only_inference:
         logging.info('Now we are doing XLNet classification training on %s!', ctxs)
 
     all_model_params = model.collect_params()
@@ -378,7 +377,7 @@ def train(metric):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
             break
-        if not only_inference:
+        if not args.only_inference:
             metric.reset()
             step_loss = 0
             tic = time.time()
@@ -434,7 +433,7 @@ def train(metric):
                     patience -= 1
             metric_history.append((epoch_id, metric_nm, metric_val))
 
-        if not only_inference:
+        if not args.only_inference:
             # save params
             ckpt_name = 'model_xlnet_{0}_{1}.params'.format(args.task_name, epoch_id)
             params_saved = os.path.join(output_dir, ckpt_name)
@@ -444,7 +443,7 @@ def train(metric):
             logging.info('Time cost=%.2fs', toc - tic)
             tic = toc
 
-    if not only_inference:
+    if not args.only_inference:
         # we choose the best model based on metric[0],
         # assuming higher score stands for better model quality
         metric_history.sort(key=lambda x: x[2][0], reverse=True)
