@@ -75,7 +75,7 @@ parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for fi
 parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
-parser.add_argument('--model', type=str, default='xlnet_cased_l24_h1024_a16',
+parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
                     help='The name of pre-trained XLNet model to fine-tune')
 
 parser.add_argument('--dataset', type=str, default='126gb',
@@ -402,7 +402,9 @@ def train(metric):
                         out = model(input_ids, segment_ids, valid_length=valid_length)
                         out_list.append(out)
                         label_list.append(label)
-                        batch_loss.append(loss_function(out, label).mean())
+                        ls = loss_function(out, label).mean()
+                        ls.backward()
+                        batch_loss.append(ls)
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                     trainer.allreduce_grads()
