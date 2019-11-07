@@ -76,7 +76,7 @@ parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
 parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
-                    choices=['xlnet_cased_l24_h1024_a16','xlnet_cased_l12_h768_a12'],
+                    choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
                     help='The name of pre-trained XLNet model to fine-tune')
 
 parser.add_argument('--dataset', type=str, default='126gb',
@@ -117,7 +117,7 @@ def split_and_load(arrs, ctx):
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logging.captureWarnings(True)
-handler = logging.FileHandler("log.txt")
+handler = logging.FileHandler('log.txt')
 handler.setLevel(logging.INFO)
 handler2 = logging.StreamHandler()
 handler2.setLevel(logging.INFO)
@@ -179,7 +179,6 @@ else:
     num_classes = len(task.class_labels)
     loss_function = gluon.loss.SoftmaxCELoss()
 # reuse the XLnetClassifier class with num_classes=1 for regression
-print("units: ", xlnet_base._net._units)
 model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0.1,
                         num_classes=num_classes)
 
@@ -374,7 +373,7 @@ def train(metric):
     patience = args.early_stop
 
     tic = time.time()
-
+    accumulate_loss = 0
     for epoch_id in range(args.epochs):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
@@ -405,10 +404,11 @@ def train(metric):
                         out_list.append(out)
                         label_list.append(label)
                         ls = loss_function(out, label).mean()
-                        ls.backward()
+                        accumulate_loss = accumulate_loss + ls
                         batch_loss.append(ls)
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
+                    accumulate_loss.backward()
                     trainer.allreduce_grads()
                     nlp.utils.clip_grad_global_norm(params, 1)
                     trainer.update(args.accumulate if args.accumulate else 1,
@@ -416,6 +416,7 @@ def train(metric):
                     step_num += 1
                     if args.accumulate and args.accumulate > 1:
                         # set grad to zero for gradient accumulation
+                        accumulate_loss = 0
                         all_model_params.zero_grad()
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
@@ -512,5 +513,3 @@ def evaluate(loader_dev, metric, segment):
 
 if __name__ == '__main__':
     train(task.metrics)
-
-sys.exit()
