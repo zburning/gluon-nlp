@@ -18,11 +18,11 @@ import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
-from model.qa import XLNetForQA, XLNetForQALoss
+from model.qa import XLNetForQA
 from data.qa import SQuADTransform, preprocess_dataset
 from transformer import model
-from bert_qa_evaluate import *
-sys.path.append('../bert/data')
+from xlnet_qa_evaluate import *
+from utils_squad_evaluate import EVAL_OPTS, main as evaluate_on_squad
 #pylint: disable=wrong-import-position
 from data.transform import XLNetDatasetTransform
 
@@ -33,6 +33,7 @@ log = logging.getLogger('gluonnlp')
 log.setLevel(logging.DEBUG)
 formatter = logging.Formatter(
     fmt='%(levelname)s:%(name)s:%(asctime)s %(message)s', datefmt='%H:%M:%S')
+
 parser = argparse.ArgumentParser(description='XLNet QA example.'
                                  'We fine-tune the XLNet model on SQuAD dataset.')
 
@@ -57,6 +58,8 @@ parser.add_argument(
     default='126gb',
     help='The dataset BERT pre-trained with.')
 
+parser.add_argument("--predict_file", default='./data/dev-v2.0.json', type=str, required=True,
+                    help="SQuAD json for predictions. E.g., dev-v1.1.json or test-v1.1.json")
 
 parser.add_argument('--uncased',
                     action='store_false',
@@ -101,14 +104,14 @@ parser.add_argument('--lr',
 
 parser.add_argument('--warmup_ratio',
                     type=float,
-                    default=0.1,
+                    default=0,
                     help='ratio of warmup steps that linearly increase learning rate from '
-                    '0 to target learning rate. default is 0.1')
+                    '0 to target learning rate. default is 0')
 
 parser.add_argument('--log_interval',
                     type=int,
-                    default=50,
-                    help='report interval. default is 50')
+                    default=10,
+                    help='report interval. default is 10')
 
 parser.add_argument('--max_seq_length',
                     type=int,
@@ -169,11 +172,12 @@ parser.add_argument('--pretrained_xlnet_parameters',
                     type=str,
                     default=None,
                     help='Pre-trained bert model parameter file. default is None')
+parser.add_argument('--start_top_n', type=int, default=5, help='to be added')
+parser.add_argument('--end_top_n', type=int, default=5, help='to be added')
 args = parser.parse_args()
 
-output_dir = args.output_dir
-if not os.path.exists(output_dir):
-    os.mkdir(output_dir)
+if not os.path.exists(args.output_dir):
+    os.mkdir(args.output_dir)
 
 fh = logging.FileHandler(os.path.join(
     args.output_dir, 'finetune_squad.log'), mode='w')
@@ -187,44 +191,23 @@ log.addHandler(fh)
 
 log.info(args)
 
-model_name = args.model
-dataset_name = args.dataset
-only_predict = args.only_predict
-model_parameters = args.model_parameters
 pretrained_xlnet_parameters = args.pretrained_xlnet_parameters
-if pretrained_xlnet_parameters and model_parameters:
+if pretrained_xlnet_parameters and args.model_parameters:
     raise ValueError('Cannot provide both pre-trained BERT parameters and '
                      'BertForQA model parameters.')
-lower = args.uncased
 
-epochs = args.epochs
-batch_size = args.batch_size
-test_batch_size = args.test_batch_size
-lr = args.lr
 ctx = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
-accumulate = args.accumulate
-log_interval = args.log_interval * accumulate if accumulate else args.log_interval
-if accumulate:
+
+log_interval = args.log_interval * args.accumulate if args.accumulate else args.log_interval
+if args.accumulate:
     log.info('Using gradient accumulation. Effective batch size = {}'.
-             format(accumulate*batch_size))
-
-optimizer = args.optimizer
-warmup_ratio = args.warmup_ratio
+             format(args.accumulate*args.batch_size))
 
 
-version_2 = args.version_2
-null_score_diff_threshold = args.null_score_diff_threshold
-
-max_seq_length = args.max_seq_length
-doc_stride = args.doc_stride
-max_query_length = args.max_query_length
-n_best_size = args.n_best_size
-max_answer_length = args.max_answer_length
-
-if max_seq_length <= max_query_length + 3:
+if args.max_seq_length <= args.max_query_length + 3:
     raise ValueError('The max_seq_length (%d) must be greater than max_query_length '
-                     '(%d) + 3' % (max_seq_length, max_query_length))
+                     '(%d) + 3' % (args.max_seq_length, args.max_query_length))
 
 # vocabulary and tokenizer
 
@@ -232,8 +215,8 @@ if max_seq_length <= max_query_length + 3:
 get_pretrained = True
 
 get_model_params = {
-    'name' : model_name,
-    'dataset_name' : dataset_name,
+    'name' : args.model,
+    'dataset_name' : args.dataset,
     'pretrained' : get_pretrained,
     'ctx' : ctx,
     'use_decoder' : False,
@@ -251,31 +234,33 @@ batchify_fn = nlp.data.batchify.Tuple(
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'))
 
-net = XLNetForQA(xlnet_base=xlnet_base)
+net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n)
+
 initializer = mx.init.Normal(0.02)
 
-if model_parameters:
+if args.model_parameters:
     # load complete XLNetForQA parameters
-    nlp.utils.load_parameters(net, model_parameters, ctx=ctx, cast_dtype=True)
+    nlp.utils.load_parameters(net, args.model_parameters, ctx=ctx, cast_dtype=True)
 
 elif pretrained_xlnet_parameters:
     # only load XLnetModel parameters
     nlp.utils.load_parameters(xlnet_base, pretrained_xlnet_parameters, ctx=ctx,
                               ignore_extra=True, cast_dtype=True)
-    net.span_classifier.initialize(init=initializer, ctx=ctx)
+    net.start_logits.initialize(init=initializer, ctx=ctx)
+    net.end_logits.initialize(init=initializer, ctx=ctx)
+    net.answer_class.initialize(init=initializer, ctx=ctx)
 
 elif get_pretrained:
     # only load XLNetModel parameters
-    net.span_classifier.initialize(init=initializer, ctx=ctx)
+    net.start_logits.initialize(init=initializer, ctx=ctx)
+    net.end_logits.initialize(init=initializer, ctx=ctx)
+    net.answer_class.initialize(init=initializer, ctx=ctx)
 else:
     # no checkpoint is loaded
-    net.initialize(init=initializer, ctx=ctx)
+    net.start_logits.initialize(init=initializer, ctx=ctx)
+    net.end_logits.initialize(init=initializer, ctx=ctx)
+    net.answer_class.initialize(init=initializer, ctx=ctx)
 
-#net.hybridize(static_alloc=True)
-
-loss_function = XLNetForQALoss()
-loss_function.answerpooling.initialize(init=initializer)
-#loss_function.hybridize(static_alloc=True)
 
 def split_and_load(arrs, _ctx):
     """split and load arrays to a list of contexts"""
@@ -284,11 +269,12 @@ def split_and_load(arrs, _ctx):
     loaded_arrs = [mx.gluon.utils.split_and_load(arr, _ctx, even_split=False) for arr in arrs]
     return zip(*loaded_arrs)
 
+
 def train():
     """Training function."""
     segment = 'train' if not args.debug else 'dev'
     log.info('Loading %s data...', segment)
-    if version_2:
+    if args.version_2:
         train_data = SQuAD(segment, version='2.0')
     else:
         train_data = SQuAD(segment, version='1.1')
@@ -301,9 +287,9 @@ def train():
         train_data, SQuADTransform(
             copy.copy(tokenizer),
             vocab,
-            max_seq_length=max_seq_length,
-            doc_stride=doc_stride,
-            max_query_length=max_query_length,
+            max_seq_length=args.max_seq_length,
+            doc_stride=args.doc_stride,
+            max_query_length=args.max_query_length,
             is_pad=True,
             is_training=True))
     log.info('The number of examples after preprocessing:{}'.format(
@@ -311,13 +297,13 @@ def train():
 
     train_dataloader = mx.gluon.data.DataLoader(
         train_data_transform, batchify_fn=batchify_fn,
-        batch_size=batch_size, num_workers=4, shuffle=True)
+        batch_size=args.batch_size, num_workers=4, shuffle=True)
 
     log.info('Start Training')
 
-    optimizer_params = {'learning_rate': lr}
+    optimizer_params = {'learning_rate': args.lr}
     try:
-        trainer = mx.gluon.Trainer(net.collect_params(), optimizer,
+        trainer = mx.gluon.Trainer(net.collect_params(), args.optimizer,
                                    optimizer_params, update_on_kvstore=False)
     except ValueError as e:
         warnings.warn('AdamW optimizer is not found. Please consider upgrading to '
@@ -326,16 +312,16 @@ def train():
                                    optimizer_params, update_on_kvstore=False)
 
     num_train_examples = len(train_data_transform)
-    step_size = batch_size * accumulate if accumulate else batch_size
-    num_train_steps = int(num_train_examples / step_size * epochs)
-    num_warmup_steps = int(num_train_steps * warmup_ratio)
+    step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
+    num_train_steps = int(num_train_examples / step_size * args.epochs)
+    num_warmup_steps = int(num_train_steps * args.warmup_ratio)
     step_num = 0
 
     def set_new_lr(step_num, batch_id):
         """set new learning rate"""
         # set grad to zero for gradient accumulation
-        if accumulate:
-            if batch_id % accumulate == 0:
+        if args.accumulate:
+            if batch_id % args.accumulate == 0:
                 net.collect_params().zero_grad()
                 step_num += 1
         else:
@@ -344,11 +330,11 @@ def train():
         # Notice that this learning rate scheduler is adapted from traditional linear learning
         # rate scheduler where step_num >= num_warmup_steps, new_lr = 1 - step_num/num_train_steps
         if step_num < num_warmup_steps:
-            new_lr = lr * step_num / num_warmup_steps
+            new_lr = args.lr * step_num / num_warmup_steps
         else:
-            offset = (step_num - num_warmup_steps) * lr / \
+            offset = (step_num - num_warmup_steps) * args.lr / \
                 (num_train_steps - num_warmup_steps)
-            new_lr = lr - offset
+            new_lr = args.lr - offset
         trainer.set_learning_rate(new_lr)
         return step_num
 
@@ -359,15 +345,14 @@ def train():
     params = [p for p in net.collect_params().values()
               if p.grad_req != 'null']
     # Set grad_req if gradient accumulation is required
-    if accumulate:
+    if args.accumulate:
         for p in params:
             p.grad_req = 'add'
 
     epoch_tic = time.time()
     total_num = 0
     log_num = 0
-    evaluate()
-    for epoch_id in range(epochs):
+    for epoch_id in range(args.epochs):
         step_loss = 0.0
         tic = time.time()
         for batch_id, data in enumerate(train_dataloader):
@@ -382,17 +367,15 @@ def train():
                     is_impossible = _is_impossible if args.version_2 else None
                     log_num += len(inputs)
                     total_num += len(inputs)
-                    out, span_out = net(inputs,
+                    out = net(inputs,
                               token_types,
-                              valid_length)
-                    ls = loss_function(span_out, out, [
-                        start_label,
-                        end_label], is_impossible = is_impossible).mean()
-                    if accumulate:
-                        ls = ls / accumulate
+                              valid_length, [start_label, end_label], is_impossible=is_impossible)
+                    ls = out[0] / len(ctx)
+                    if args.accumulate:
+                        ls = ls / args.accumulate
                     ls.backward()
             # update
-            if not accumulate or (batch_id + 1) % accumulate == 0:
+            if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1)
@@ -411,15 +394,22 @@ def train():
         epoch_toc = time.time()
         log.info('Time cost={:.2f} s, Thoughput={:.2f} samples/s'.format(
             epoch_toc - epoch_tic, total_num/(epoch_toc - epoch_tic)))
+        ckpt_name = 'model_xlnet_squad_{1}.params'.format(epoch_id)
+        params_saved = os.path.join(args.output_dir, ckpt_name)
+        nlp.utils.save_parameters(model, params_saved)
+        log.info('params saved in: %s', params_saved)
 
-    net.save_parameters(os.path.join(output_dir, 'net.params'))
+    net.save_parameters(os.path.join(args.output_dir, 'net.params'))
 
+RawResultExtended = collections.namedtuple("RawResultExtended",
+    ["unique_id", "start_top_log_probs", "start_top_index",
+     "end_top_log_probs", "end_top_index", "cls_logits"])
 
-def evaluate():
+def evaluate(prefix=""):
     """Evaluate the model on validation dataset.
     """
     log.info('Loading dev data...')
-    if version_2:
+    if args.version_2:
         dev_data = SQuAD('dev', version='2.0')
     else:
         dev_data = SQuAD('dev', version='1.1')
@@ -432,9 +422,9 @@ def evaluate():
         SQuADTransform(
             copy.copy(tokenizer),
             vocab,
-            max_seq_length=max_seq_length,
-            doc_stride=doc_stride,
-            max_query_length=max_query_length,
+            max_seq_length=args.max_seq_length,
+            doc_stride=args.doc_stride,
+            max_query_length=args.max_query_length,
             is_pad=True,
             is_training=False)._transform, lazy=False)
 
@@ -442,9 +432,9 @@ def evaluate():
         dev_data, SQuADTransform(
             copy.copy(tokenizer),
             vocab,
-            max_seq_length=max_seq_length,
-            doc_stride=doc_stride,
-            max_query_length=max_query_length,
+            max_seq_length=args.max_seq_length,
+            doc_stride=args.doc_stride,
+            max_query_length=args.max_query_length,
             is_pad=True,
             is_training=False))
     log.info('The number of examples after preprocessing:{}'.format(
@@ -453,7 +443,7 @@ def evaluate():
     dev_dataloader = mx.gluon.data.DataLoader(
         dev_data_transform,
         batchify_fn=batchify_fn,
-        num_workers=4, batch_size=test_batch_size,
+        num_workers=4, batch_size=args.test_batch_size,
         shuffle=False, last_batch='keep')
 
     log.info('start prediction')
@@ -462,18 +452,27 @@ def evaluate():
 
     epoch_tic = time.time()
     total_num = 0
-    for data in dev_dataloader:
+    for (id, data) in enumerate(dev_dataloader):
         data_list = list(split_and_load(data, ctx))
         for splited_data in data_list:
             example_ids, inputs, token_types, valid_length, _, _, _ = splited_data
             total_num += len(inputs)
-            out = net(inputs, token_types, valid_length)
-            output = mx.nd.split(out[1], axis=2, num_outputs=2)
+            outputs = net(inputs, token_types, valid_length, is_evaluation=True)
             example_ids = example_ids.asnumpy().tolist()
-            pred_start = output[0].reshape((0, -3)).asnumpy()
-            pred_end = output[1].reshape((0, -3)).asnumpy()
-            for example_id, start, end in zip(example_ids, pred_start, pred_end):
-                all_results[example_id].append(PredResult(start=start, end=end))
+            for i, example_ids in enumerate(example_ids):
+                print()
+                result = RawResultExtended(unique_id=None,
+                                           start_top_log_probs=outputs[0][i].asnumpy().tolist(),
+                                           start_top_index=outputs[1][i].asnumpy().tolist(),
+                                           end_top_log_probs=outputs[2][i].asnumpy().tolist(),
+                                           end_top_index=outputs[3][i].asnumpy().tolist(),
+                                           cls_logits=outputs[4][i].asnumpy().tolist())
+                all_results[example_ids].append(result)
+        if id % args.log_interval == 0:
+            if id == 10:
+                break
+            print("evaluation process: ", id)
+            break
     epoch_toc = time.time()
     log.info('Time cost={:.2f} s, Thoughput={:.2f} samples/s'.format(
         epoch_toc - epoch_tic, total_num/(epoch_toc - epoch_tic)))
@@ -481,37 +480,51 @@ def evaluate():
     log.info('Get prediction results...')
 
     all_predictions = collections.OrderedDict()
-
+    all_nbest_json = collections.OrderedDict()
+    scores_diff_json = collections.OrderedDict()
     for features in dev_dataset:
         results = all_results[features[0].example_id]
         example_qas_id = features[0].qas_id
-
-        prediction, _ = predict(
+        score_diff, best_non_null_entry, nbest_json = predict_extended(
             features=features,
             results=results,
-            tokenizer=nlp.data.BERTBasicTokenizer(lower=lower),
-            max_answer_length=max_answer_length,
-            null_score_diff_threshold=null_score_diff_threshold,
-            n_best_size=n_best_size,
-            version_2=version_2)
+            tokenizer=tokenizer,
+            n_best_size=args.n_best_size,
+            max_answer_length=args.max_answer_length,
+            start_n_top=args.start_top_n,
+            end_n_top=args.end_top_n)
+        scores_diff_json[example_qas_id] = score_diff
+        all_predictions[example_qas_id] = best_non_null_entry
+        all_nbest_json[example_qas_id] = nbest_json
 
-        all_predictions[example_qas_id] = prediction
-
-    with io.open(os.path.join(output_dir, 'predictions.json'),
-                 'w', encoding='utf-8') as fout:
-        data = json.dumps(all_predictions, ensure_ascii=False)
-        fout.write(data)
-
-    if version_2:
-        log.info('Please run evaluate-v2.0.py to get evaluation results for SQuAD 2.0')
+    output_prediction_file = os.path.join(args.output_dir, "predictions_{}.json".format(prefix))
+    output_nbest_file = os.path.join(args.output_dir, "nbest_predictions_{}.json".format(prefix))
+    if args.version_2:
+        output_null_log_odds_file = os.path.join(args.output_dir, "null_odds_{}.json".format(prefix))
     else:
-        F1_EM = get_F1_EM(dev_data, all_predictions)
-        log.info(F1_EM)
+        output_null_log_odds_file = None
+
+    with open(output_prediction_file, "w") as writer:
+        writer.write(json.dumps(all_predictions, indent=4) + "\n")
+    with open(output_nbest_file, "w") as writer:
+        writer.write(json.dumps(all_nbest_json, indent=4) + "\n")
+    if args.version_2:
+        with open(output_null_log_odds_file, "w") as writer:
+            writer.write(json.dumps(scores_diff_json, indent=4) + "\n")
+
+    evaluate_options = EVAL_OPTS(data_file=args.predict_file,
+                                 pred_file=output_prediction_file,
+                                 na_prob_file=output_null_log_odds_file)
+
+    results = evaluate_on_squad(evaluate_options)
+    return results
+
+
 
 
 if __name__ == '__main__':
-    if not only_predict:
-        #train()
+    if not args.only_predict:
+        train()
         evaluate()
-    elif model_parameters:
+    elif args.model_parameters:
         evaluate()

@@ -180,7 +180,7 @@ class SQuADTransform:
 
     Parameters
     ----------
-    tokenizer : BERTTokenizer.
+    tokenizer : XLNetTokenizer.
         Tokenizer for the sentences.
     labels : list of int.
         List of all label ids for the classification task.
@@ -381,6 +381,7 @@ class SQuADTransform:
             valid_length = len(input_ids)
 
             # Zero-pad up to the sequence length.
+            padding_length = 0
             if self.is_pad:
                 padding_length = self.max_seq_length - valid_length
                 input_ids = [padding] * padding_length + input_ids
@@ -403,15 +404,15 @@ class SQuADTransform:
                     start_position = 0
                     end_position = 0
                 else:
-                    #[CLS] is added to the end, so doc_offset = len(query_tokens)
-                    doc_offset = len(query_tokens) + 1
+                    #padding to the left
+                    doc_offset = padding_length + len(query_tokens) + 1
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
             if self.is_training and example.is_impossible:
                 start_position = 0
                 end_position = 0
-
-            features.append(SQuADFeature(example_id=example.example_id,
+            features.append(SQuADFeature(
+                                         example_id=example.example_id,
                                          qas_id=example.qas_id,
                                          doc_tokens=example.doc_tokens,
                                          doc_span_index=doc_span_index,
@@ -426,7 +427,7 @@ class SQuADTransform:
                                          is_impossible=example.is_impossible))
         return features
 
-    def __call__(self, record):
+    def __call__(self, record, evaluate=False):
         examples = self._transform(*record)
         if not examples:
             return None
