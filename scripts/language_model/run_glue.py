@@ -14,12 +14,12 @@ import numpy as np
 import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
-from XLNet_classifier import XLNetClassifier
+from model.XLNet_classifier import XLNetClassifier
 from transformer import model
 
 sys.path.append('../bert/data')
 #pylint: disable=wrong-import-position
-from data.classification import MRPCTask, QQPTask, RTETask, STSBTask, SSTTask, \
+from classification import MRPCTask, QQPTask, RTETask, STSBTask, SSTTask, \
      QNLITask, CoLATask, MNLITask, WNLITask, XNLITask, LCQMCTask, ChnSentiCorpTask
 from data.transform import XLNetDatasetTransform
 
@@ -75,8 +75,8 @@ parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for fi
 parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
-parser.add_argument('--model_name', type=str, default='xlnet_cased_l12_h768_a12',
-                    choices=['xlnet_cased_l24_h1024_a16','xlnet_cased_l12_h768_a12'],
+parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
+                    choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
                     help='The name of pre-trained XLNet model to fine-tune')
 
 parser.add_argument('--dataset', type=str, default='126gb',
@@ -89,9 +89,6 @@ parser.add_argument(
     '--only_inference', action='store_true',
     help='If set, we skip training and only perform inference on dev and test data.')
 
-parser.add_argument('--dtype', type=str, default='float32', choices=['float32', 'float16'],
-                    help='The data type for training. Doesnt support float16 currently')
-
 parser.add_argument(
     '--model_parameters', type=str, default=None,
     help='A parameter file for the model that is loaded into the model'
@@ -103,10 +100,8 @@ parser.add_argument(
     help='Whether to perform early stopping based on the metric on dev set. '
     'The provided value is the patience. ')
 
-parser.add_argument(
-    '--layer_wise_lr_decay', type=float, default= 1,
-    help='exponentially decaying the learning rates of individual layers in a top-down manner'
-)
+parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
+parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 args = parser.parse_args()
 
 
@@ -121,7 +116,7 @@ def split_and_load(arrs, ctx):
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logging.captureWarnings(True)
-handler = logging.FileHandler("log.txt")
+handler = logging.FileHandler('log.txt')
 handler.setLevel(logging.INFO)
 handler2 = logging.StreamHandler()
 handler2.setLevel(logging.INFO)
@@ -148,13 +143,6 @@ ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
 task = tasks[args.task_name]
 
-# data type with mixed precision training
-if args.dtype == 'float16':
-    from mxnet.contrib import amp  # pylint: disable=ungrouped-imports
-    # monkey patch amp list since topk does not support fp16
-    amp.lists.symbol.FP32_FUNCS.append('topk')
-    amp.lists.symbol.FP16_FP32_FUNCS.remove('topk')
-    amp.init()
 
 # model and loss
 if args.only_inference and not args.model_parameters:
@@ -169,6 +157,8 @@ get_model_params = {
     'pretrained': get_pretrained,
     'ctx': ctxs,
     'use_decoder': False,
+    'dropout': args.dropout,
+    'attention_dropout': args.attention_dropout
 }
 
 xlnet_base, vocab, tokenizer = model.get_model(**get_model_params)
@@ -183,7 +173,6 @@ else:
     num_classes = len(task.class_labels)
     loss_function = gluon.loss.SoftmaxCELoss()
 # reuse the XLnetClassifier class with num_classes=1 for regression
-print("units: ", xlnet_base._net._units)
 model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0.1,
                         num_classes=num_classes)
 
@@ -351,10 +340,8 @@ def train(metric):
         logging.info('Now we are doing XLNet classification training on %s!', ctxs)
 
     all_model_params = model.collect_params()
-    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0.00}
+    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0.01}
     trainer = gluon.Trainer(all_model_params, 'adam', optimizer_params, update_on_kvstore=False)
-    if args.dtype == 'float16':
-        amp.init_trainer(trainer)
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
     num_train_steps = int(num_train_examples / step_size * args.epochs)
@@ -378,8 +365,6 @@ def train(metric):
     patience = args.early_stop
 
     tic = time.time()
-    all_model_params.zero_grad()
-    accumulate_loss = 0
     for epoch_id in range(args.epochs):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
@@ -410,13 +395,10 @@ def train(metric):
                         out_list.append(out)
                         label_list.append(label)
                         ls = loss_function(out, label).mean()
-                        print(ls)
+                        ls.backward()
                         batch_loss.append(ls)
-                        accumulate_loss = accumulate_loss + ls
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
-                    print(accumulate_loss)
-                    accumulate_loss.backward()
                     trainer.allreduce_grads()
                     nlp.utils.clip_grad_global_norm(params, 1)
                     trainer.update(args.accumulate if args.accumulate else 1,
@@ -425,7 +407,6 @@ def train(metric):
                     if args.accumulate and args.accumulate > 1:
                         # set grad to zero for gradient accumulation
                         all_model_params.zero_grad()
-                        accumulate_loss = 0
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
                 metric.update(label_list, out_list)
@@ -495,7 +476,7 @@ def evaluate(loader_dev, metric, segment):
             out = model(input_ids, segment_ids, valid_length=valid_length)
             out_list.append(out)
             label_list.append(label)
-            batch_loss.append(loss_function(out, label))
+            batch_loss.append(loss_function(out, label).mean())
             #batch_loss.append(loss_function(out, label).means())
 
         batch_loss = sum([ls.asscalar() for ls in batch_loss])
@@ -521,5 +502,3 @@ def evaluate(loader_dev, metric, segment):
 
 if __name__ == '__main__':
     train(task.metrics)
-
-sys.exit()
