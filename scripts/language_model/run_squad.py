@@ -227,12 +227,20 @@ xlnet_base, vocab, tokenizer = model.get_model(**get_model_params)
 
 batchify_fn = nlp.data.batchify.Tuple(
     nlp.data.batchify.Stack(),
-    nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
-    nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
+    nlp.data.batchify.Stack(), # Already padded in data transform
+    nlp.data.batchify.Stack(), # Already padded in data transform
+    nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'))
+    # nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
+    # nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
+    # nlp.data.batchify.Stack('float32'),
+    # nlp.data.batchify.Stack('float32'),
+    # nlp.data.batchify.Stack('float32'),
+    # nlp.data.batchify.Stack('float32'),
+    # nlp.data.batchify.Stack('float32'))
 
 net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n)
 
@@ -357,12 +365,13 @@ def train():
         tic = time.time()
         for batch_id, data in enumerate(train_dataloader):
             # set new lr
+            print(data)
             step_num = set_new_lr(step_num, batch_id)
             data_list = list(split_and_load(data, ctx))
             # forward and backward
             with mx.autograd.record():
                 for splited_data in data_list:
-                    _, inputs, token_types, valid_length, start_label, end_label, _is_impossible = splited_data
+                    _, inputs, token_types, valid_length, p_mask, start_label, end_label, _is_impossible = splited_data
                     valid_length = valid_length.astype('float32')
                     is_impossible = _is_impossible if args.version_2 else None
                     log_num += len(inputs)
@@ -385,7 +394,7 @@ def train():
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()
                 log.info('Epoch: {}, Batch: {}/{}, Loss={:.4f}, lr={:.7f} Time cost={:.1f} Thoughput={:.2f} samples/s'  # pylint: disable=line-too-long
-                         .format(epoch_id, batch_id, len(train_dataloader),
+                         .format(epoch_id + 1, batch_id + 1, len(train_dataloader),
                                  step_loss / log_interval,
                                  trainer.learning_rate, toc - tic, log_num/(toc - tic)))
                 tic = time.time()
@@ -455,12 +464,11 @@ def evaluate(prefix=""):
     for (id, data) in enumerate(dev_dataloader):
         data_list = list(split_and_load(data, ctx))
         for splited_data in data_list:
-            example_ids, inputs, token_types, valid_length, _, _, _ = splited_data
+            example_ids, inputs, token_types, valid_length, p_mask, _, _, _ = splited_data
             total_num += len(inputs)
-            outputs = net(inputs, token_types, valid_length, is_evaluation=True)
+            outputs = net(inputs, token_types, valid_length,p_mask=p_mask, is_evaluation=True)
             example_ids = example_ids.asnumpy().tolist()
             for i, example_ids in enumerate(example_ids):
-                print()
                 result = RawResultExtended(unique_id=None,
                                            start_top_log_probs=outputs[0][i].asnumpy().tolist(),
                                            start_top_index=outputs[1][i].asnumpy().tolist(),
@@ -469,10 +477,8 @@ def evaluate(prefix=""):
                                            cls_logits=outputs[4][i].asnumpy().tolist())
                 all_results[example_ids].append(result)
         if id % args.log_interval == 0:
-            if id == 10:
-                break
             print("evaluation process: ", id)
-            break
+
     epoch_toc = time.time()
     log.info('Time cost={:.2f} s, Thoughput={:.2f} samples/s'.format(
         epoch_toc - epoch_tic, total_num/(epoch_toc - epoch_tic)))

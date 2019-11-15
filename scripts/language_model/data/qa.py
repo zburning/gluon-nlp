@@ -22,6 +22,7 @@ from gluonnlp.data.utils import whitespace_splitter
 
 __all__ = ['SQuADTransform', 'preprocess_dataset']
 
+
 class SquadExample:
     """A single training/test example for SQuAD question.
 
@@ -78,7 +79,7 @@ def preprocess_dataset(dataset, transform, num_workers=8):
                 dataset_len.append(_data[-1])
 
     dataset = SimpleDataset(dataset_transform).transform(
-        lambda x: (x[0], x[1], x[2], x[3], x[4], x[5], x[6]))
+        lambda x: (x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]))
     end = time.time()
     pool.close()
     print('Done! Transform dataset costs %.2f seconds.' % (end-start))
@@ -89,7 +90,6 @@ class SQuADFeature:
     """Single feature of a single example transform of the SQuAD question.
 
     """
-
     def __init__(self,
                  example_id,
                  qas_id,
@@ -99,6 +99,9 @@ class SQuADFeature:
                  token_to_orig_map,
                  token_is_max_context,
                  input_ids,
+                 cls_index,
+                 p_mask,
+                 paragraph_len,
                  valid_length,
                  segment_ids,
                  start_position,
@@ -112,6 +115,9 @@ class SQuADFeature:
         self.token_to_orig_map = token_to_orig_map
         self.token_is_max_context = token_is_max_context
         self.input_ids = input_ids
+        self.cls_index = cls_index
+        self.p_mask = p_mask
+        self.paragraph_len = paragraph_len
         self.valid_length = valid_length
         self.segment_ids = segment_ids
         self.start_position = start_position
@@ -351,12 +357,22 @@ class SQuADTransform:
             token_is_max_context = {}
             segment_ids = []
 
+            # p_mask: mask with 1 for token than cannot be in the answer (0 for token which can be in an answer)
+            # Original TF implem also keep the classification token (set to 0) (not sure why...)
+            p_mask = []
+
+            # Query
             for token in query_tokens:
                 tokens.append(token)
                 segment_ids.append(0)
+                p_mask.append(0)
+
+            #SEP token
             tokens.append(self.vocab.sep_token)
             segment_ids.append(0)
+            p_mask.append(1)
 
+            # Paragraph
             for i in range(doc_span.length):
                 split_token_index = doc_span.start + i
                 token_to_orig_map[len(
@@ -367,11 +383,18 @@ class SQuADTransform:
                 token_is_max_context[len(tokens)] = is_max_context
                 tokens.append(all_doc_tokens[split_token_index])
                 segment_ids.append(1)
-            # add [SEP] and [CLS] to the end
+                p_mask.append(0)
+
+            paragraph_len = doc_span.length
+
+            # add [SEP] and [CLS] to the end. The origin implem adds to start.
             tokens.append(self.vocab.sep_token)
             segment_ids.append(1)
+            p_mask.append(1)
             tokens.append(self.vocab.cls_token)
             segment_ids.append(1)
+            p_mask.append(1)
+
             if self.do_lookup:
                 input_ids = self.vocab.to_indices(tokens)
             else:
@@ -386,11 +409,14 @@ class SQuADTransform:
                 padding_length = self.max_seq_length - valid_length
                 input_ids = [padding] * padding_length + input_ids
                 segment_ids = [1] * padding_length + segment_ids
+                p_mask = [1] * padding_length + p_mask
                 assert len(input_ids) == self.max_seq_length
                 assert len(segment_ids) == self.max_seq_length
 
-            start_position = 0
-            end_position = 0
+            cls_index = len(input_ids) - 1
+            span_is_impossible = example.is_impossible
+            start_position = None
+            end_position = None
             if self.is_training and not example.is_impossible:
                 # For training, if our document chunk does not contain an annotation
                 # we throw it out, since there is nothing to predict.
@@ -403,14 +429,17 @@ class SQuADTransform:
                 if out_of_span:
                     start_position = 0
                     end_position = 0
+                    span_is_impossible = True
                 else:
                     #padding to the left
                     doc_offset = padding_length + len(query_tokens) + 1
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
-            if self.is_training and example.is_impossible:
-                start_position = 0
-                end_position = 0
+
+            if self.is_training and span_is_impossible:
+                start_position = cls_index
+                end_position = cls_index
+
             features.append(SQuADFeature(
                                          example_id=example.example_id,
                                          qas_id=example.qas_id,
@@ -420,6 +449,9 @@ class SQuADTransform:
                                          token_to_orig_map=token_to_orig_map,
                                          token_is_max_context=token_is_max_context,
                                          input_ids=input_ids,
+                                         cls_index=cls_index,
+                                         p_mask=p_mask,
+                                         paragraph_len=paragraph_len,
                                          valid_length=valid_length,
                                          segment_ids=segment_ids,
                                          start_position=start_position,
@@ -439,6 +471,7 @@ class SQuADTransform:
             feature.append(_example.input_ids)
             feature.append(_example.segment_ids)
             feature.append(_example.valid_length)
+            feature.append(_example.p_mask)
             feature.append(_example.start_position)
             feature.append(_example.end_position)
             feature.append(_example.is_impossible)

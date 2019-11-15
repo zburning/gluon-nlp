@@ -12,8 +12,8 @@ class PoolerStartLogits(HybridBlock):
         super(PoolerStartLogits, self).__init__(prefix=prefix, params=params)
         self.dense = nn.Dense(1, flatten=False)
 
-    def __call__(self, hidden_states, p_maks=None):
-        return super(PoolerStartLogits, self).__call__(hidden_states, p_maks)
+    def __call__(self, hidden_states, p_masks=None):
+        return super(PoolerStartLogits, self).__call__(hidden_states, p_masks)
 
     def hybrid_forward(self, F, hidden_states, p_mask):
         """ Args:
@@ -36,13 +36,16 @@ class PoolerEndLogits(HybridBlock):
         self.dense_1 = nn.Dense(1, flatten=False)
         self.layernorm = nn.LayerNorm()
 
-    def __call__(self, hidden_states, start_states=None, start_positions=None, p_mask=None):
-        return super(PoolerEndLogits, self).__call__(hidden_states, start_states, start_positions, p_mask)
+    def __call__(self, hidden_states, start_states=None, start_positions=None, p_masks=None):
+        return super(PoolerEndLogits, self).__call__(hidden_states, start_states, start_positions, p_masks)
 
     def hybrid_forward(self, F, hidden_states, start_states, start_positions, p_mask):
         assert start_states is not None or start_positions is not None, "One of start_states, start_positions should be not None"
         if start_positions is not None:
             bsz, slen, hsz = hidden_states.shape
+            print(mx.nd.arange(bsz).expand_dims(1))
+            print(start_positions)
+
             start_states = mx.nd.gather_nd(hidden_states,
                             mx.nd.concat(mx.nd.arange(bsz).expand_dims(1), start_positions.reshape((bsz,1))).T) #shape(bsz, hsz)
             start_states = start_states.expand_dims(1)
@@ -107,18 +110,18 @@ class XLNetForQA(Block):
         self.end_logits = PoolerEndLogits()
         self.answer_class = XLNetPoolerAnswerClass()
 
-    def __call__(self, inputs, token_types, valid_length=None, label=None, is_impossible=None, mems=None, is_evaluation=False):
+    def __call__(self, inputs, token_types, valid_length=None, label=None, p_mask=None, is_impossible=None, mems=None, is_evaluation=False):
         #pylint: disable=arguments-differ, dangerous-default-value
         """Generate the unnormalized score for the given the input sequences."""
         # XXX Temporary hack for hybridization as hybridblock does not support None inputs
         valid_length = [] if valid_length is None else valid_length
-        return super(XLNetForQA, self).__call__(inputs, token_types, valid_length, label, is_impossible, mems, is_evaluation)
+        return super(XLNetForQA, self).__call__(inputs, token_types, valid_length, p_mask, label, is_impossible, mems, is_evaluation)
 
     def _padding_mask(self, inputs, valid_length_start, left_pad=True):
         F = mx.ndarray
         if left_pad:
         #left pad
-            valid_length_start = valid_length_start
+            valid_length_start = valid_length_start.astype('int64')
             steps = F.contrib.arange_like(inputs, axis=1) - 1
             ones = F.ones_like(steps)
             mask = F.broadcast_greater(F.reshape(steps, shape=(1, -1)),
@@ -129,7 +132,7 @@ class XLNetForQA(Block):
             raise NotImplementedError
         return mask
 
-    def forward(self, inputs, token_types, valid_length, label, is_impossible, mems, is_evaluation):
+    def forward(self, inputs, token_types, valid_length, p_mask, label, is_impossible, mems, is_evaluation):
         # pylint: disable=arguments-differ
         """Generate the unnormalized score for the given the input sequences.
 
@@ -154,18 +157,19 @@ class XLNetForQA(Block):
         valid_length_start = inputs.shape[1] - valid_length
         attention_mask = self._padding_mask(inputs, valid_length_start).astype('float32')
         output, _ = self.xlnet(inputs, token_types, mems, attention_mask)
-        start_logits = self.start_logits(output) # shape (bsz, slen)
+        start_logits = self.start_logits(output, p_masks=p_mask) # shape (bsz, slen)
         if not is_evaluation:
             #training
             start_positions, end_positions = label
-            end_logit = self.end_logits(output, start_positions = start_positions)
+            end_logit = self.end_logits(output, start_positions=start_positions, p_masks=p_mask)
             span_loss = (self.loss(start_logits, start_positions) + self.loss(
                 end_logit, end_positions)) / 2
             cls_loss = None
             if is_impossible is not None:
                 cls_logits = self.answer_class(output, start_positions=start_positions)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
-            total_loss = span_loss + cls_loss if cls_loss is not None else span_loss
+            total_loss = span_loss + 0.5 * cls_loss if cls_loss is not None else span_loss
+            print("total loss: ", total_loss)
             return total_loss
         else:
             #inference
@@ -182,7 +186,6 @@ class XLNetForQA(Block):
             hidden_states_expanded = output.expand_dims(2)
             hidden_states_expanded = mx.ndarray.broadcast_to(hidden_states_expanded, shape=start_states.shape) # shape (bsz, slen, start_n_top, hsz)
 
-            # not generating p_mask now, it's unnecessary?
             end_logits = self.end_logits(hidden_states_expanded, start_states=start_states) # shape (bsz, slen, start_n_top)
             end_log_probs = mx.nd.softmax(end_logits, axis=1)  # shape (bsz, slen, start_n_top)
             end_top_log_probs, end_top_index = mx.ndarray.topk(end_log_probs, k=self.end_top_n,
@@ -190,58 +193,13 @@ class XLNetForQA(Block):
             end_top_log_probs = end_top_log_probs.reshape((-1,self.start_top_n * self.end_top_n))
             end_top_index = end_top_index.reshape((-1, self.start_top_n * self.end_top_n))
 
-            #start_states = torch.einsum("blh,bl->bh", output, start_log_probs)
+            #einsum("blh,bl->bh", output, start_log_probs) need further check
             start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1), transpose_a=True).squeeze(-1)
+
             cls_logits = self.answer_class(output, start_states=start_states)
             outputs = (start_top_log_probs, start_top_index, end_top_log_probs, end_top_index, cls_logits)
             return outputs
 
 
 
-class XLNetForQALoss(Loss):
-    """Loss for SQuAD task with XLNet.
 
-    """
-
-    def __init__(self, weight=None, batch_axis=0, **kwargs):  # pylint: disable=unused-argument
-        super(XLNetForQALoss, self).__init__(
-            weight=None, batch_axis=0, **kwargs)
-        self.loss = loss.SoftmaxCELoss()
-        self.cls_loss = loss.SigmoidBinaryCrossEntropyLoss()
-        self.answerpooling = XLNetPoolerAnswerClass()
-
-    def __call__(self, pred, hidden_states, label, is_impossible=None):
-        return super(XLNetForQALoss, self).__call__(pred, hidden_states, label, is_impossible)
-
-    def hybrid_forward(self, F, pred, hidden_states, label, is_impossible = None):  # pylint: disable=arguments-differ
-        """
-        Parameters
-        ----------
-        pred : NDArray, shape (batch_size, seq_length, 2)
-            XLNetSquad forward output.
-        hidden_states: NDArray, shape (batch_size, seq_length, units)
-        label : list, length is 2, each shape is (batch_size,1)
-            label[0] is the starting position of the answer,
-            label[1] is the ending position of the answer.
-
-        Returns
-        -------
-        outputs : NDArray
-            Shape (batch_size,)
-        """
-        #span loss
-
-        pred = F.split(pred, axis=2, num_outputs=2)
-        start_pred = pred[0].reshape((0, -3))
-        start_label = label[0]
-        end_pred = pred[1].reshape((0, -3))
-        end_label = label[1]
-        span_loss = (self.loss(start_pred, start_label) + self.loss(
-            end_pred, end_label)) / 2
-        #regression loss
-        cls_loss = None
-        if is_impossible is not None:
-            cls_logits = self.answerpooling(hidden_states, start_positions=start_label)
-            cls_loss = self.cls_loss(cls_logits, is_impossible)
-        total_loss = span_loss + cls_loss if cls_loss is not None else span_loss
-        return total_loss
