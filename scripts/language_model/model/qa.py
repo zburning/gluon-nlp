@@ -43,9 +43,6 @@ class PoolerEndLogits(HybridBlock):
         assert start_states is not None or start_positions is not None, "One of start_states, start_positions should be not None"
         if start_positions is not None:
             bsz, slen, hsz = hidden_states.shape
-            print(mx.nd.arange(bsz).expand_dims(1))
-            print(start_positions)
-
             start_states = mx.nd.gather_nd(hidden_states,
                             mx.nd.concat(mx.nd.arange(bsz).expand_dims(1), start_positions.reshape((bsz,1))).T) #shape(bsz, hsz)
             start_states = start_states.expand_dims(1)
@@ -169,7 +166,6 @@ class XLNetForQA(Block):
                 cls_logits = self.answer_class(output, start_positions=start_positions)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
             total_loss = span_loss + 0.5 * cls_loss if cls_loss is not None else span_loss
-            print("total loss: ", total_loss)
             return total_loss
         else:
             #inference

@@ -234,13 +234,6 @@ batchify_fn = nlp.data.batchify.Tuple(
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'))
-    # nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
-    # nlp.data.batchify.Pad(axis=0, pad_val=vocab[vocab.padding_token]),
-    # nlp.data.batchify.Stack('float32'),
-    # nlp.data.batchify.Stack('float32'),
-    # nlp.data.batchify.Stack('float32'),
-    # nlp.data.batchify.Stack('float32'),
-    # nlp.data.batchify.Stack('float32'))
 
 net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n)
 
@@ -365,7 +358,6 @@ def train():
         tic = time.time()
         for batch_id, data in enumerate(train_dataloader):
             # set new lr
-            print(data)
             step_num = set_new_lr(step_num, batch_id)
             data_list = list(split_and_load(data, ctx))
             # forward and backward
