@@ -14,7 +14,7 @@ import numpy as np
 import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
-from model.XLNet_classifier import XLNetClassifier
+from XLNet_classifier import XLNetClassifier
 from transformer import model
 
 sys.path.append('../bert/data')
@@ -75,7 +75,7 @@ parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for fi
 parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
-parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
+parser.add_argument('--model_name', type=str, default='xlnet_cased_l12_h768_a12',
                     choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
                     help='The name of pre-trained XLNet model to fine-tune')
 
@@ -116,7 +116,7 @@ def split_and_load(arrs, ctx):
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logging.captureWarnings(True)
-handler = logging.FileHandler('log.txt')
+handler = logging.FileHandler('log_{0}.txt'.format(args.task_name))
 handler.setLevel(logging.INFO)
 handler2 = logging.StreamHandler()
 handler2.setLevel(logging.INFO)
@@ -139,7 +139,7 @@ random.seed(args.seed)
 mx.random.seed(args.seed)
 
 num_workers = 0
-ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
+ctxs = [mx.cpu(0), mx.cpu(1)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
 task = tasks[args.task_name]
 
@@ -340,7 +340,7 @@ def train(metric):
         logging.info('Now we are doing XLNet classification training on %s!', ctxs)
 
     all_model_params = model.collect_params()
-    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0.01}
+    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0}
     trainer = gluon.Trainer(all_model_params, 'adam', optimizer_params, update_on_kvstore=False)
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
@@ -392,11 +392,13 @@ def train(metric):
                     for splited_data in data_list:
                         input_ids, valid_length, segment_ids, label = splited_data
                         out = model(input_ids, segment_ids, valid_length=valid_length)
-                        out_list.append(out)
-                        label_list.append(label)
-                        ls = loss_function(out, label).mean()
+                        if out.shape[0] >= 2:
+                            out_list.append(out)
+                            label_list.append(label)
+                        ls = loss_function(out, label).mean() / len(ctxs)
                         ls.backward()
                         batch_loss.append(ls)
+
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                     trainer.allreduce_grads()
@@ -462,26 +464,18 @@ def evaluate(loader_dev, metric, segment):
     step_loss = 0
     tic = time.time()
     for batch_id, seqs in enumerate(loader_dev):
-        batch_loss = []
-        out_list = []
-        label_list = []
         # forward and backward
-        batch_loss = []
-        out_list = []
-        label_list = []
-        # forward and backward
-        data_list = list(split_and_load(seqs, ctxs))
-        for splited_data in data_list:
-            input_ids, valid_length, segment_ids, label = splited_data
-            out = model(input_ids, segment_ids, valid_length=valid_length)
-            out_list.append(out)
-            label_list.append(label)
-            batch_loss.append(loss_function(out, label).mean())
-            #batch_loss.append(loss_function(out, label).means())
+        input_ids, valid_length, segment_ids, label = seqs
+        input_ids = input_ids.as_in_context(ctxs[0])
+        valid_length = valid_length.as_in_context(ctxs[0])
+        segment_ids = segment_ids.as_int_context(ctxs[0])
+        label = label.as_in_context(ctxs[0])
+        out = model(input_ids, segment_ids, valid_length=valid_length)
+        ls = loss_function(out, label).mean()
 
-        batch_loss = sum([ls.asscalar() for ls in batch_loss])
+        batch_loss = ls.asscalar()
         step_loss += batch_loss
-        metric.update(label_list, out_list)
+        metric.update([label], [out])
 
         if (batch_id + 1) % (args.log_interval) == 0:
             log_eval(batch_id, len(loader_dev), metric, step_loss, args.log_interval)
