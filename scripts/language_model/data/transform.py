@@ -4,6 +4,7 @@ import numpy as np
 
 class XLNetSentenceTransform:
     r"""XLNet style data transformation.
+
     The transformation is processed in the following steps:
     - tokenize the input sequences
     - insert [CLS], [SEP] as necessary. Note that the [CLS] token is inserted
@@ -12,9 +13,9 @@ class XLNetSentenceTransform:
       sequence or the second sequence.
     - generate valid length
     - pad the sequence to max_length. Note that we use left pad in XLNet
+
     For sequence pairs, the input is a tuple of 3 strings:
     text_a, text_b and label.
-
     Inputs:
         text_a: 'is this jacksonville ?'
         text_b: 'no it is not'
@@ -27,7 +28,6 @@ class XLNetSentenceTransform:
         type_ids: 0  0    0    0     0       0 0     1  1  1  1   1 1      1
         valid_length: 14
         label: 0
-
     For single sequences, the input is a tuple of 2 strings: text_a and label.
     Inputs:
         text_a: 'the dog is hairy .'
@@ -148,8 +148,10 @@ class XLNetSentenceTransform:
             else:
                 tokens_b.pop()
 
+
 class XLNetDatasetTransform:
     """Dataset transformation for XLNet-style sentence classification or regression.
+
     Parameters
     ----------
     tokenizer : BERTTokenizer.
@@ -203,7 +205,6 @@ class XLNetDatasetTransform:
 
         For sequence pairs, the input is a tuple of 3 strings:
         text_a, text_b and label.
-
         Inputs:
             text_a: 'is this jacksonville ?'
             text_b: 'no it is not'
@@ -216,7 +217,6 @@ class XLNetDatasetTransform:
             type_ids: 0  0    0    0     0       0 0     1  1  1  1   1 1      1
             valid_length: 14
             label: 0
-
         For single sequences, the input is a tuple of 2 strings: text_a and label.
         Inputs:
             text_a: 'the dog is hairy .'
@@ -254,3 +254,4 @@ class XLNetDatasetTransform:
             return input_ids, valid_length, segment_ids, label
         else:
             return self._xl_xform(line)
+            

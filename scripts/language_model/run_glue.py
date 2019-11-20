@@ -100,8 +100,8 @@ parser.add_argument(
     help='Whether to perform early stopping based on the metric on dev set. '
     'The provided value is the patience. ')
 
-parser.add_argument('--dropout', type=float, default=0, help='dropout')
-parser.add_argument('--attention_dropout', type=float, default=0, help='attention dropout')
+parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
+parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 args = parser.parse_args()
 
 
