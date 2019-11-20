@@ -14,7 +14,7 @@ import numpy as np
 import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
-from XLNet_classifier import XLNetClassifier
+from model.XLNet_classifier import XLNetClassifier
 from transformer import model
 
 sys.path.append('../bert/data')
@@ -100,8 +100,8 @@ parser.add_argument(
     help='Whether to perform early stopping based on the metric on dev set. '
     'The provided value is the patience. ')
 
-parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
-parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
+parser.add_argument('--dropout', type=float, default=0, help='dropout')
+parser.add_argument('--attention_dropout', type=float, default=0, help='attention dropout')
 args = parser.parse_args()
 
 
@@ -139,7 +139,7 @@ random.seed(args.seed)
 mx.random.seed(args.seed)
 
 num_workers = 0
-ctxs = [mx.cpu(0), mx.cpu(1)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
+ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
 task = tasks[args.task_name]
 
@@ -311,27 +311,26 @@ def test(loader_test, segment):
             f.write(u'%d\t%s\n' % (i, str(pred)))
 
 
-def log_train(batch_id, batch_num, metric, step_loss, _log_interval, epoch_id, learning_rate):
+def log_metric(metric, is_training=True):
+    prefix = 'training' if is_training else 'validation'
+    metric_nm, metric_val = metric.get()
+    if not isinstance(metric_nm, list):
+        metric_nm, metric_val = [metric_nm], [metric_val]
+    logging_str = prefix + ' metrics:' + ','.join([i + ':%.4f' for i in metric_nm])
+    logging.info(logging_str, *metric_val)
+    return metric_nm, metric_val
+
+def log_train(batch_id, batch_num, step_loss, _log_interval, epoch_id, learning_rate):
     """Generate and print out the log message for training. """
-    metric_nm, metric_val = metric.get()
-    if not isinstance(metric_nm, list):
-        metric_nm, metric_val = [metric_nm], [metric_val]
-
-    train_str = '[Epoch %d Batch %d/%d] loss=%.4f, lr=%.7f, metrics:' + \
-                ','.join([i + ':%.4f' for i in metric_nm])
+    train_str = '[Epoch %d Batch %d/%d] loss=%.4f, lr=%.7f'
     logging.info(train_str, epoch_id + 1, batch_id + 1, batch_num, step_loss / _log_interval,
-                 learning_rate, *metric_val)
+                 learning_rate)
 
 
-def log_eval(batch_id, batch_num, metric, step_loss, _log_interval):
+def log_eval(batch_id, batch_num, step_loss, _log_interval):
     """Generate and print out the log message for inference. """
-    metric_nm, metric_val = metric.get()
-    if not isinstance(metric_nm, list):
-        metric_nm, metric_val = [metric_nm], [metric_val]
-
-    eval_str = '[Batch %d/%d] loss=%.4f, metrics:' + \
-               ','.join([i + ':%.4f' for i in metric_nm])
-    logging.info(eval_str, batch_id + 1, batch_num, step_loss / _log_interval, *metric_val)
+    eval_str = '[Batch %d/%d] loss=%.4f'
+    logging.info(eval_str, batch_id + 1, batch_num, step_loss / _log_interval)
 
 
 def train(metric):
@@ -392,13 +391,9 @@ def train(metric):
                     for splited_data in data_list:
                         input_ids, valid_length, segment_ids, label = splited_data
                         out = model(input_ids, segment_ids, valid_length=valid_length)
-                        if out.shape[0] >= 2:
-                            out_list.append(out)
-                            label_list.append(label)
                         ls = loss_function(out, label).mean() / len(ctxs)
                         ls.backward()
                         batch_loss.append(ls)
-
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                     trainer.allreduce_grads()
@@ -411,9 +406,8 @@ def train(metric):
                         all_model_params.zero_grad()
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
-                metric.update(label_list, out_list)
                 if (batch_id + 1) % (args.log_interval) == 0:
-                    log_train(batch_id, len(train_data), metric, step_loss, args.log_interval,
+                    log_train(batch_id, len(train_data), step_loss, args.log_interval,
                               epoch_id, trainer.learning_rate)
                     step_loss = 0
             mx.nd.waitall()
@@ -464,29 +458,28 @@ def evaluate(loader_dev, metric, segment):
     step_loss = 0
     tic = time.time()
     for batch_id, seqs in enumerate(loader_dev):
+        batch_loss = []
+        out_list = []
+        label_list = []
         # forward and backward
-        input_ids, valid_length, segment_ids, label = seqs
-        input_ids = input_ids.as_in_context(ctxs[0])
-        valid_length = valid_length.as_in_context(ctxs[0])
-        segment_ids = segment_ids.as_int_context(ctxs[0])
-        label = label.as_in_context(ctxs[0])
-        out = model(input_ids, segment_ids, valid_length=valid_length)
-        ls = loss_function(out, label).mean()
+        data_list = list(split_and_load(seqs, ctxs))
+        for splited_data in data_list:
+            input_ids, valid_length, segment_ids, label = splited_data
+            out = model(input_ids, segment_ids, valid_length=valid_length)
+            out_list.append(out)
+            label_list.append(label)
+            batch_loss.append(loss_function(out, label).mean() / len(ctxs))
 
-        batch_loss = ls.asscalar()
+        batch_loss = sum([ls.asscalar() for ls in batch_loss])
         step_loss += batch_loss
-        metric.update([label], [out])
-
         if (batch_id + 1) % (args.log_interval) == 0:
-            log_eval(batch_id, len(loader_dev), metric, step_loss, args.log_interval)
+            log_eval(batch_id, len(loader_dev), step_loss, args.log_interval)
             step_loss = 0
 
-    metric_nm, metric_val = metric.get()
-    if not isinstance(metric_nm, list):
-        metric_nm, metric_val = [metric_nm], [metric_val]
-    metric_str = 'validation metrics:' + ','.join([i + ':%.4f' for i in metric_nm])
-    logging.info(metric_str, *metric_val)
-
+    label_list = mx.nd.concat(*label_list, dim=0)
+    out_list = mx.nd.concat(*out_list, dim=0)
+    metric.update([label_list], [out_list])
+    metric_nm, metric_val = log_metric(metric, is_training=False)
     mx.nd.waitall()
     toc = time.time()
     logging.info('Time cost=%.2fs, throughput=%.2f samples/s', toc - tic,
