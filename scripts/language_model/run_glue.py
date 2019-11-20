@@ -383,8 +383,6 @@ def train(metric):
                     new_lr = args.lr - offset * args.lr
                 trainer.set_learning_rate(new_lr)
                 batch_loss = []
-                out_list = []
-                label_list = []
                 # forward and backward
                 with mx.autograd.record():
                     data_list = list(split_and_load(seqs, ctxs))
@@ -457,10 +455,10 @@ def evaluate(loader_dev, metric, segment):
     metric.reset()
     step_loss = 0
     tic = time.time()
+    out_list = []
+    label_list = []
     for batch_id, seqs in enumerate(loader_dev):
         batch_loss = []
-        out_list = []
-        label_list = []
         # forward and backward
         data_list = list(split_and_load(seqs, ctxs))
         for splited_data in data_list:
