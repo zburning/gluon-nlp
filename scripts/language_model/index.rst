@@ -214,3 +214,24 @@ paper authors.
     token_types = mx.nd.ones_like(indices)
     mems = model.begin_mems(batch_size=1, mem_len=500, context=indices.context)
     output, new_mems = model(indices, token_types, mems)
+
+Sentence Classification
+~~~~~~~~~~~~~~~~~~~~~~~
+
+GluonNLP provides the following example script to fine-tune sentence classification with pre-trained
+XLNet model.
+
+Results using `xlnet_12_768_12`:
+
+|Task Name                       |Metrics                       |Results on Dev Set            |log                           |command                       |
+|:-------------------------------|:----------------------------:|:----------------------------:|:----------------------------:|:----------------------------:|
+|[CoLA]                          |Matthew Corr.                 |56                            |                              |                              |
+|[SST-2]                         |Accuracy                      |94                            |                              |                              |
+|[MRPC]                          |Accuracy/F1                   |87/90                         |                              |                              |
+|[STS-B]                         |Pearson Corr.                 |86                            |                              |                              |
+|[QQP]                           |Accuracy                      |90                            |                              |                              |
+|[MNLI]                          |Accuracy                      |87/86                         |                              |                              |
+|[QNLI]                          |Accuracy                      |88                            |                              |                              |
+|[RTE]                           |Accuracy                      |74                            |                              |                              |
+
+
