@@ -44,17 +44,19 @@ parser = argparse.ArgumentParser(
 
 parser.add_argument('--epochs', type=int, default=3, help='number of epochs.')
 
-parser.add_argument('--batch_size', type=int, default=128,
+
+parser.add_argument('--batch_size', type=int, default=32,
                     help='Batch size. Number of examples per gpu in a minibatch.')
 
-parser.add_argument('--dev_batch_size', type=int, default=32,
+parser.add_argument('--dev_batch_size', type=int, default=8,
                     help='Batch size for dev set and test set')
 
-parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
+parser.add_argument('--lr', type=float, default=5e-5, help='Initial learning rate')
 
 parser.add_argument('--epsilon', type=float, default=1e-6,
                     help='Small value to avoid division by 0')
-parser.add_argument('--warmup_ratio', type=float, default=0,
+parser.add_argument('--warmup_ratio', type=float, default=0.1,
+
                     help='ratio of warmup steps used in NOAM\'s stepsize schedule')
 parser.add_argument('--log_interval', type=int, default=10, help='report interval')
 parser.add_argument('--max_len', type=int, default=128, help='Maximum length of the sentence pairs')
@@ -75,8 +77,7 @@ parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for fi
 parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
-parser.add_argument('--model_name', type=str, default='xlnet_cased_l12_h768_a12',
-                    choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
+parser.add_argument('--model', type=str, default='xlnet_cased_l24_h1024_a16',
                     help='The name of pre-trained XLNet model to fine-tune')
 
 parser.add_argument('--dataset', type=str, default='126gb',
@@ -117,15 +118,11 @@ def split_and_load(arrs, ctx):
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logging.captureWarnings(True)
-handler = logging.FileHandler('log_{0}.txt'.format(args.task_name))
+handler = logging.FileHandler("log.txt")
 handler.setLevel(logging.INFO)
-handler2 = logging.StreamHandler()
-handler2.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
-handler2.setFormatter(formatter)
 logger.addHandler(handler)
-logger.addHandler(handler2)
 logging.info(args)
 
 log_interval = args.log_interval * args.accumulate if args.accumulate else args.log_interval
@@ -144,6 +141,14 @@ ctxs = [mx.cpu(0)] if not args.gpu else [mx.gpu(i) for i in range(args.gpu)]
 
 task = tasks[args.task_name]
 
+# data type with mixed precision training
+if args.dtype == 'float16':
+    from mxnet.contrib import amp  # pylint: disable=ungrouped-imports
+    # monkey patch amp list since topk does not support fp16
+    amp.lists.symbol.FP32_FUNCS.append('topk')
+    amp.lists.symbol.FP16_FP32_FUNCS.remove('topk')
+    amp.init()
+
 
 # model and loss
 if args.only_inference and not args.model_parameters:
@@ -153,13 +158,11 @@ if args.only_inference and not args.model_parameters:
 get_pretrained = True
 
 get_model_params = {
-    'name': args.model_name,
-    'dataset_name': args.dataset,
+    'name': model_name,
+    'dataset_name': dataset,
     'pretrained': get_pretrained,
     'ctx': ctxs,
     'use_decoder': False,
-    'dropout': args.dropout,
-    'attention_dropout': args.attention_dropout
 }
 
 xlnet_base, vocab, tokenizer = model.get_model(**get_model_params)
@@ -321,17 +324,21 @@ def log_metric(metric, is_training=True):
     logging.info(logging_str, *metric_val)
     return metric_nm, metric_val
 
-def log_train(batch_id, batch_num, step_loss, _log_interval, epoch_id, learning_rate):
-    """Generate and print out the log message for training. """
-    train_str = '[Epoch %d Batch %d/%d] loss=%.4f, lr=%.7f'
+    train_str = '[Epoch %d Batch %d/%d] loss=%.4f, lr=%.7f, metrics:' + \
+                ','.join([i + ':%.4f' for i in metric_nm])
     logging.info(train_str, epoch_id + 1, batch_id + 1, batch_num, step_loss / _log_interval,
-                 learning_rate)
+                 learning_rate, *metric_val)
 
 
 def log_eval(batch_id, batch_num, step_loss, _log_interval):
     """Generate and print out the log message for inference. """
-    eval_str = '[Batch %d/%d] loss=%.4f'
-    logging.info(eval_str, batch_id + 1, batch_num, step_loss / _log_interval)
+    metric_nm, metric_val = metric.get()
+    if not isinstance(metric_nm, list):
+        metric_nm, metric_val = [metric_nm], [metric_val]
+
+    eval_str = '[Batch %d/%d] loss=%.4f, metrics:' + \
+               ','.join([i + ':%.4f' for i in metric_nm])
+    logging.info(eval_str, batch_id + 1, batch_num, step_loss / _log_interval, *metric_val)
 
 
 def train(metric):
@@ -340,8 +347,10 @@ def train(metric):
         logging.info('Now we are doing XLNet classification training on %s!', ctxs)
 
     all_model_params = model.collect_params()
-    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0}
+    optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0.01}
     trainer = gluon.Trainer(all_model_params, 'adam', optimizer_params, update_on_kvstore=False)
+    if args.dtype == 'float16':
+        amp.init_trainer(trainer)
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
     num_train_steps = int(num_train_examples / step_size * args.epochs)
@@ -379,10 +388,10 @@ def train(metric):
                 # learning rate schedule
                 if step_num < num_warmup_steps:
                     new_lr = args.lr * step_num / num_warmup_steps
-                elif args.lr_decay == 'linear':
+                else:
                     non_warmup_steps = step_num - num_warmup_steps
                     offset = non_warmup_steps / (num_train_steps - num_warmup_steps)
-                    new_lr = max(0, args.lr - offset * args.lr)
+                    new_lr = args.lr - offset * args.lr
                 trainer.set_learning_rate(new_lr)
                 batch_loss = []
                 # forward and backward
@@ -391,9 +400,9 @@ def train(metric):
                     for splited_data in data_list:
                         input_ids, valid_length, segment_ids, label = splited_data
                         out = model(input_ids, segment_ids, valid_length=valid_length)
-                        ls = loss_function(out, label).mean() / len(ctxs)
-                        ls.backward()
-                        batch_loss.append(ls)
+                        out_list.append(out)
+                        label_list.append(label)
+                        batch_loss.append(loss_function(out, label).mean())
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                     trainer.allreduce_grads()
@@ -406,6 +415,7 @@ def train(metric):
                         all_model_params.zero_grad()
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
+                metric.update(label_list, out_list)
                 if (batch_id + 1) % (args.log_interval) == 0:
                     log_train(batch_id, len(train_data), step_loss, args.log_interval,
                               epoch_id, trainer.learning_rate)
@@ -462,14 +472,18 @@ def evaluate(loader_dev, metric, segment):
     for batch_id, seqs in enumerate(loader_dev):
         batch_loss = []
         # forward and backward
+        batch_loss = []
+        out_list = []
+        label_list = []
+        # forward and backward
         data_list = list(split_and_load(seqs, ctxs))
         for splited_data in data_list:
             input_ids, valid_length, segment_ids, label = splited_data
-            label = label.reshape((-1))
             out = model(input_ids, segment_ids, valid_length=valid_length)
-            out_list.append(out.as_in_context(mx.cpu(0)))
-            label_list.append(label.as_in_context(mx.cpu(0)))
-            batch_loss.append(loss_function(out, label).mean() / len(ctxs))
+            out_list.append(out)
+            label_list.append(label)
+            batch_loss.append(loss_function(out, label).mean())
+            #batch_loss.append(loss_function(out, label).means())
 
         batch_loss = sum([ls.asscalar() for ls in batch_loss])
         step_loss += batch_loss
@@ -490,3 +504,5 @@ def evaluate(loader_dev, metric, segment):
 
 if __name__ == '__main__':
     train(task.metrics)
+
+sys.exit()
