@@ -270,7 +270,7 @@ def log_noacc(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, s
     running_nsp_loss = running_nsp_loss / log_interval
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
-    logging.info('[step {}]\tmlm_loss={:7.5f}\tnsp_loss={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
+    logging.info('[step {}]\tmlm_loss={:7.5f}\tdisc_loss={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
                  .format(step_num, running_mlm_loss.asscalar(), running_nsp_loss.asscalar(),
                          throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
@@ -285,7 +285,7 @@ def log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss, step_nu
     running_nsp_loss = running_nsp_loss / log_interval
     lr = trainer.learning_rate if trainer else 0
     # pylint: disable=line-too-long
-    logging.info('[step {}]\tmlm_loss={:7.5f}\tmlm_acc={:4.2f}\tnsp_loss={:5.2f}\tnsp_acc={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
+    logging.info('[step {}]\tmlm_loss={:7.5f}\tmlm_acc={:4.2f}\tdisc_loss={:5.2f}\tdisc_acc={:5.2f}\tthroughput={:.1f}K tks/s\tlr={:.7f} time={:.2f}, latency={:.1f} ms/batch'
                  .format(step_num, running_mlm_loss.asscalar(), mlm_metric.get()[1] * 100, running_nsp_loss.asscalar(),
                          nsp_metric.get()[1] * 100, throughput.asscalar(), lr, duration, duration*1000/log_interval))
     # pylint: enable=line-too-long
@@ -340,15 +340,15 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
     """Evaluation function."""
     logging.info('Running evaluation ... ')
     mlm_metric = nlp.metric.MaskedAccuracy()
-    nsp_metric = nlp.metric.MaskedAccuracy()
+    disc_metric = mx.metric.Accuracy()
     mlm_metric.reset()
-    nsp_metric.reset()
+    disc_metric.reset()
 
     eval_begin_time = time.time()
     begin_time = time.time()
     step_num = 0
-    running_mlm_loss = running_nsp_loss = 0
-    total_mlm_loss = total_nsp_loss = 0
+    running_mlm_loss = running_disc_loss = 0
+    total_mlm_loss = total_disc_loss = 0
     running_num_tks = 0
     for _, data_batch in enumerate(data_eval):
         step_num += 1
@@ -360,45 +360,49 @@ def evaluate(data_eval, model, ctx, log_interval, dtype):
             (input_id, masked_id, masked_position, masked_weight, \
              next_sentence_label, segment_id, valid_length) = data
             valid_length = valid_length.astype(dtype, copy=False)
-            out = model(input_id, masked_id, masked_position, masked_weight, \
-                        next_sentence_label, segment_id, valid_length)
-            classified, decoded, ls1, ls2 = out
-            masked_id = masked_id.reshape(-1)
-            ns_label_list.append(next_sentence_label)
+            decoded, classified, disc_label, ls1, ls2 = \
+                model(input_id, masked_id, masked_position, masked_weight, segment_id, valid_length)
+
+            ns_label_list.append(disc_label)
             ns_pred_list.append(classified)
+
             mask_label_list.append(masked_id)
             mask_pred_list.append(decoded)
+
             mask_weight_list.append(masked_weight)
 
-            valid_length = valid_length.astype('float32', copy=False)
+            masked_id = masked_id.reshape(-1)
+
+
             running_mlm_loss += ls1.as_in_context(mx.cpu())
-            running_nsp_loss += ls2.as_in_context(mx.cpu())
+            running_disc_loss += ls2.as_in_context(mx.cpu())
             running_num_tks += valid_length.sum().as_in_context(mx.cpu())
-        nsp_metric.update(ns_label_list, ns_pred_list)
+
+        disc_metric.update(ns_label_list, ns_pred_list)
         mlm_metric.update(mask_label_list, mask_pred_list, mask_weight_list)
 
         # logging
         if (step_num + 1) % (log_interval) == 0:
             total_mlm_loss += running_mlm_loss
-            total_nsp_loss += running_nsp_loss
-            log(begin_time, running_num_tks, running_mlm_loss, running_nsp_loss,
-                step_num, mlm_metric, nsp_metric, None, log_interval)
+            total_disc_loss += running_disc_loss
+            log(begin_time, running_num_tks, running_mlm_loss, running_disc_loss,
+                step_num, mlm_metric, disc_metric, None, log_interval)
             begin_time = time.time()
-            running_mlm_loss = running_nsp_loss = running_num_tks = 0
+            running_mlm_loss = running_disc_loss = running_num_tks = 0
             mlm_metric.reset_local()
-            nsp_metric.reset_local()
+            disc_metric.reset_local()
 
     mx.nd.waitall()
     eval_end_time = time.time()
     # accumulate losses from last few batches, too
     if running_mlm_loss != 0:
         total_mlm_loss += running_mlm_loss
-        total_nsp_loss += running_nsp_loss
+        total_disc_loss += running_disc_loss
     total_mlm_loss /= step_num
-    total_nsp_loss /= step_num
-    logging.info('Eval mlm_loss={:.3f}\tmlm_acc={:.1f}\tnsp_loss={:.3f}\tnsp_acc={:.1f}\t'
+    total_disc_loss /= step_num
+    logging.info('Eval mlm_loss={:.3f}\tmlm_acc={:.1f}\tdisc_loss={:.3f}\tdisc_acc={:.1f}\t'
                  .format(total_mlm_loss.asscalar(), mlm_metric.get_global()[1] * 100,
-                         total_nsp_loss.asscalar(), nsp_metric.get_global()[1] * 100))
+                         total_disc_loss.asscalar(), disc_metric.get_global()[1] * 100))
     logging.info('Eval cost={:.1f}s'.format(eval_end_time - eval_begin_time))
 
 

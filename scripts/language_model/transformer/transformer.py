@@ -25,6 +25,7 @@ import mxnet as mx
 from mxnet.gluon import nn
 
 import gluonnlp as nlp
+import os
 
 from .attention_cell import PositionalEmbeddingMultiHeadAttentionCell, \
                              RelativeSegmentEmbeddingPositionalEmbeddingMultiHeadAttentionCell
@@ -750,3 +751,150 @@ class XLNet((mx.gluon.Block)):
             new_mems = None
 
         return output, new_mems
+
+
+small_ELECTRIA_generator_hparams = {
+    'attention_cell': 'multi_head',
+    'num_layers': 12,
+    'units': 64,
+    'hidden_size': 256,
+    'max_length': 512,
+    'num_heads': 1,
+    'scaled': True,
+    'dropout': 0.1,
+    'use_residual': True,
+    'embed_size': 128,
+    'embed_dropout': 0.1,
+    'token_type_vocab_size': 2,
+    'word_embed': None,
+}
+
+small_ELECTRIA_discriminator_hparams = {
+    'attention_cell': 'multi_head',
+    'num_layers': 12,
+    'units': 256,
+    'hidden_size': 1024,
+    'max_length': 512,
+    'num_heads': 4,
+    'scaled': True,
+    'dropout': 0.1,
+    'use_residual': True,
+    'embed_size': 128,
+    'embed_dropout': 0.1,
+    'token_type_vocab_size': 2,
+    'word_embed': None,
+}
+
+
+def get_model(hparams, dataset_name=None, vocab=None,
+                   use_pooler=True, use_decoder=True, use_classifier=False, output_attention=False,
+                   output_all_encodings=False, use_token_type_embed=True,
+                   root=os.path.join(nlp.base.get_home_dir(), 'models'),
+                    **kwargs):
+
+    predefined_args = hparams
+    mutable_args = ['use_residual', 'dropout', 'embed_dropout', 'word_embed']
+    mutable_args = frozenset(mutable_args)
+    assert all((k not in kwargs or k in mutable_args) for k in predefined_args), \
+        'Cannot override predefined model settings.'
+    predefined_args.update(kwargs)
+    # encoder
+    encoder = nlp.model.BERTEncoder(attention_cell=predefined_args['attention_cell'],
+                          num_layers=predefined_args['num_layers'],
+                          units=predefined_args['units'],
+                          hidden_size=predefined_args['hidden_size'],
+                          max_length=predefined_args['max_length'],
+                          num_heads=predefined_args['num_heads'],
+                          scaled=predefined_args['scaled'],
+                          dropout=predefined_args['dropout'],
+                          output_attention=output_attention,
+                          output_all_encodings=output_all_encodings,
+                          use_residual=predefined_args['use_residual'],
+                          activation=predefined_args.get('activation', 'gelu'),
+                          layer_norm_eps=predefined_args.get('layer_norm_eps', None))
+
+
+    # bert_vocab
+    from gluonnlp.vocab import BERTVocab
+    bert_vocab = nlp.model.bert._load_vocab(dataset_name, vocab, root, cls=BERTVocab)
+    # BERT
+    net = nlp.model.bert.BERTModel(encoder, len(bert_vocab),
+                    token_type_vocab_size=predefined_args['token_type_vocab_size'],
+                    units=predefined_args['units'],
+                    embed_size=predefined_args['embed_size'],
+                    embed_dropout=predefined_args['embed_dropout'],
+                    word_embed=predefined_args['word_embed'],
+                    use_pooler=use_pooler, use_decoder=use_decoder,
+                    use_classifier=use_classifier,
+                    use_token_type_embed=use_token_type_embed)
+    return net, bert_vocab
+
+class ELECTRA(mx.gluon.HybridBlock):
+    def __init__(self, generator, discriminator, units=768, dropout=0, prefix=None, params=None):
+        super(ELECTRA, self).__init__(prefix=prefix, params=params)
+        with self.name_scope():
+            self._G = generator
+            self._D = discriminator
+            self.classifier = nn.HybridSequential(prefix=prefix)
+            if dropout:
+                self.classifier.add(nn.Dropout(rate=dropout))
+            self.classifier.add(nn.Dense(units=1))
+            self.pooler = nn.Dense(units=units, flatten=False, activation='tanh', prefix=prefix)
+
+    def hybrid_forward(self, F, inputs, token_types, valid_length=None, masked_positions=None):
+        gen_output, _, decoded = self._G(inputs, token_types, valid_length)
+        #Considering using sampling here?
+        dics_input = F.argmax(decoded, axis=-1)
+
+        disc_output, _, _ = self._D(dics_input, token_types, valid_length)
+        classified = self.classifier(self.pooler(disc_output)).squeeze(-1)
+        return decoded, classified, gen_output, disc_output
+
+
+
+
+def get_ELECTRA_for_pretrain(ctx, dataset_name=None, prefix=None, params=None):
+        generator, vocab_g = get_model(small_ELECTRIA_generator_hparams, dataset_name=dataset_name,
+                                       use_classifier=False, use_pooler=False, ctx=ctx)
+        discriminator, _ = get_model(small_ELECTRIA_discriminator_hparams, dataset_name=dataset_name,
+                                           use_decoder=False, use_classifier=False, use_pooler=False, ctx=ctx)
+
+        net = ELECTRA(generator, discriminator)
+        net.initialize(init=mx.init.Normal(0.02), ctx=ctx)
+
+        net.hybridize(static_alloc=True)
+
+        mlm_loss = mx.gluon.loss.SoftmaxCELoss()
+        disc_loss = mx.gluon.loss.SigmoidBCELoss()
+
+        mlm_loss.hybridize(static_alloc=True, static_shape=True)
+        disc_loss.hybridize(static_alloc=True, static_shape=True)
+
+        model = ELECTRIAForPretrain(net, mlm_loss, disc_loss, len(vocab_g))
+        return model, vocab_g
+
+
+
+
+class ELECTRIAForPretrain(mx.gluon.HybridBlock):
+    def __init__(self, electra, mlm_loss, disc_loss, vocab_size, prefix=None, params=None):
+        super(ELECTRIAForPretrain, self).__init__(prefix=prefix, params=params)
+        self._electra = electra
+        self._mlm_loss = mlm_loss
+        self._disc_loss = disc_loss
+        self._vocab_size = vocab_size
+
+    def hybrid_forward(self, input_id, masked_id, masked_position, masked_weight, segment_id=None, valid_length=None):
+        # pylint: disable=arguments-differ
+        """Predict with BERT for MLM and NSP. """
+        num_masks = masked_weight.sum() + 1e-8
+        valid_length = valid_length.reshape(-1)
+        masked_id = masked_id.reshape(-1)
+        _, _, decoded, classified = self.electra(input_id, segment_id, valid_length, masked_position)
+        decoded = decoded.reshape((-1, self._vocab_size))
+        ls1 = self._mlm_loss(decoded.astype('float32', copy=False),
+                            masked_id, masked_weight.reshape((-1, 1)))
+        ls2 = self._disc_loss(classified.astype('float32', copy=False), classified)
+        ls1 = ls1.sum() / num_masks
+        ls2 = ls2.mean() / num_masks
+        return decoded, classified, ls1, ls2

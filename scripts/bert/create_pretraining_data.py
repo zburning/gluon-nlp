@@ -462,18 +462,17 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
             continue
         for index in index_set:
             covered_indexes.add(index)
-            masked_token = None
             # 80% of the time, replace with [MASK]
-            if random.random() < 0.8:
-                masked_token = _MASK_TOKEN
-            else:
-                # 10% of the time, keep original
-                if random.random() < 0.5:
-                    masked_token = tokens[index]
-                # 10% of the time, replace with random word
-                else:
-                    # generate a random word in [0, vocab_size - 1]
-                    masked_token = random.randint(0, len(vocab) - 1)
+            # if random.random() < 0.8:
+            masked_token = _MASK_TOKEN
+            # else:
+            #     # 10% of the time, keep original
+            #     if random.random() < 0.5:
+            #         masked_token = tokens[index]
+            #     # 10% of the time, replace with random word
+            #     else:
+            #         # generate a random word in [0, vocab_size - 1]
+            #         masked_token = random.randint(0, len(vocab) - 1)
 
             output_tokens[index] = masked_token
 
