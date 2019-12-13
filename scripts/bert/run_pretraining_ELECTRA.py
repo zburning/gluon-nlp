@@ -76,11 +76,11 @@ parser.add_argument('--total_batch_size', type=int, default=256,
 parser.add_argument('--accumulate', type=int, default=1,
                     help='Number of batches for gradient accumulation. '
                          'total_batch_size = batch_size_per_worker * num_worker * accumulate.')
-parser.add_argument('--num_steps', type=int, default=20, help='Number of optimization steps')
+parser.add_argument('--num_steps', type=int, default=766000, help='Number of optimization steps')
 parser.add_argument('--start_step', type=int, default=0,
                     help='Start optimization step from the checkpoint.')
 parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
-parser.add_argument('--warmup_ratio', type=float, default=0.01,
+parser.add_argument('--warmup_ratio', type=float, default=0.008,
                     help='ratio of warmup steps used in NOAM\'s stepsize schedule')
 parser.add_argument('--dtype', type=str, default='float32', help='data dtype')
 parser.add_argument('--no_compute_acc', action='store_true',
@@ -135,6 +135,8 @@ parser.add_argument('--comm_backend', type=str, default='device',
 parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
+
+parser.add_argument('--lamb', type=float, default=50, help='the weight of the loss on discriminator')
 args = parser.parse_args()
 
 # logging
@@ -162,7 +164,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
         valid_length = valid_length.astype(args.dtype, copy=False)
         with mx.autograd.record():
             decoded, classified, disc_label, ls1, ls2 = self._model(input_id, masked_id, masked_position, masked_weight, segment_id, valid_length)
-            ls = ls1 + ls2
+            ls = ls1 + args.lamb * ls2
             ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
