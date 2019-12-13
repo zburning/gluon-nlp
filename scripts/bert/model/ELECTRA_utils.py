@@ -1,36 +1,17 @@
-import numpy as np
 import mxnet as mx
 from gluonnlp.model import GELU
 from mxnet.gluon import nn
 import gluonnlp as nlp
 import os
 
-class BERTLayerNorm(nn.LayerNorm):
-    """BERT style Layer Normalization.
-
-    Epsilon is added inside the square root and set to 1e-12 by default.
-
-    Inputs:
-        - **data**: input tensor with arbitrary shape.
-        - **out**: output tensor with the same shape as `data`.
-    """
-
-    def __init__(self, epsilon=1e-12, in_channels=0, prefix=None, params=None):
-        super(BERTLayerNorm, self).__init__(epsilon=epsilon, in_channels=in_channels,
-                                            prefix=prefix, params=params)
-
-    def hybrid_forward(self, F, data, gamma, beta):
-        """forward computation."""
-        return F.LayerNorm(data, gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon)
-
 
 class ELECTRAComponent(nlp.model.BERTModel):
     def __init__(self, encoder, vocab_size=None, token_type_vocab_size=None, units=None,
-                 embed_size=None, embed_dropout=0.0, embed_initializer=None,
+                 embed_size=None, embed_initializer=None,
                  word_embed=None, token_type_embed=None, use_pooler=True, use_decoder=True,
                  use_classifier=True, use_token_type_embed=True, emb_proj=False, prefix=None, params=None):
         super(ELECTRAComponent, self).__init__(encoder, vocab_size, token_type_vocab_size, units,
-                                            embed_size, embed_dropout, embed_initializer,
+                                            embed_size, embed_initializer,
                                             word_embed, token_type_embed, use_pooler, use_decoder,
                                             use_classifier, use_token_type_embed, prefix, params)
         self._embed_size = embed_size
@@ -47,7 +28,7 @@ class ELECTRAComponent(nlp.model.BERTModel):
             decoder = nn.HybridSequential(prefix=prefix)
             decoder.add(nn.Dense(units, flatten=False))
             decoder.add(GELU())
-            decoder.add(BERTLayerNorm(in_channels=units))
+            decoder.add(nn.LayerNorm(in_channels=units, epsilon=1e-12))
             if self._emb_proj:
                 decoder.add(nn.Dense(self._embed_size, flatten=False))
             decoder.add(nn.Dense(vocab_size, flatten=False, params=embed.collect_params()))
@@ -116,9 +97,9 @@ small_ELECTRIA_generator_hparams = {
     'dropout': 0.1,
     'use_residual': True,
     'embed_size': 768,
-    'embed_dropout': 0.1,
     'token_type_vocab_size': 2,
     'word_embed': None,
+     'layer_norm_eps': 1e-12
 }
 
 small_ELECTRIA_discriminator_hparams = {
@@ -132,9 +113,9 @@ small_ELECTRIA_discriminator_hparams = {
     'dropout': 0.1,
     'use_residual': True,
     'embed_size': 768,
-    'embed_dropout': 0.1,
     'token_type_vocab_size': 2,
     'word_embed': None,
+    'layer_norm_eps': 1e-12
 }
 
 
@@ -173,7 +154,6 @@ def get_model(hparams, dataset_name=None, vocab=None,
                     token_type_vocab_size=predefined_args['token_type_vocab_size'],
                     units=predefined_args['units'],
                     embed_size=predefined_args['embed_size'],
-                    embed_dropout=predefined_args['embed_dropout'],
                     use_pooler=use_pooler, use_decoder=use_decoder,
                     use_classifier=use_classifier,
                     use_token_type_embed=use_token_type_embed,
@@ -201,7 +181,10 @@ class ELECTRA(mx.gluon.HybridBlock):
         gen_output, decoded_full, decoded_masked = self._G(inputs, token_types, valid_length, masked_positions)
         #Considering using sampling here?
         disc_input = F.argmax(decoded_full, axis=-1)
-        disc_label = F.equal(disc_input.astype('int32'), inputs)
+
+        disc_label = disc_input.astype('int32').__eq__(inputs)
+        #disc_label2 = F.equal(disc_input.astype('int32'), inputs)
+
         disc_output = self._D(disc_input, token_types, valid_length)
         classified = self.classifier(self.pooler(disc_output)).squeeze(-1)
         #print(decoded_masked, classified, decoded_full, gen_output, disc_output)
@@ -226,6 +209,7 @@ def get_ELECTRA_for_pretrain(ctx, dataset_name=None, prefix=None, params=None):
         #disc_loss.hybridize(static_alloc=True, static_shape=True)
 
         model = ELECTRIAForPretrain(net, len(vocab_g))
+        model.hybridize(static_alloc=True)
         return model, vocab_g
 
 
@@ -255,7 +239,7 @@ class ELECTRIAForPretrain(mx.gluon.HybridBlock):
         masked_id = masked_id.reshape(-1)
         decoded, classified, disc_label, _, _, _ = self._electra(input_id, segment_id, valid_length, masked_position)
         decoded = decoded.reshape((-1, self._vocab_size))
-        ls1 = self._mlm_loss(decoded.astype('float32', copy=False),
+        ls1 = self._mlm_loss(decoded.astype('float32'),
                             masked_id, masked_weight.reshape((-1, 1)))
 
         loss_mask = self._padding_mask(F, classified, valid_length)
