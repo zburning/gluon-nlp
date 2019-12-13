@@ -35,6 +35,7 @@ import logging
 import functools
 import time
 import argparse
+import glob
 
 import mxnet as mx
 import gluonnlp as nlp
@@ -414,6 +415,7 @@ if __name__ == '__main__':
     mx.random.seed(random_seed)
 
     if args.data:
+        files = glob.glob(args.data)
         if args.raw:
             get_dataset_fn = functools.partial(get_pretrain_data_text,
                                                max_seq_length=args.max_seq_length,
@@ -430,7 +432,7 @@ if __name__ == '__main__':
                                               args.max_predictions_per_seq)
         else:
             shuffle = True
-            data_train = get_dataset_fn(args.data, batch_size,
+            data_train = get_dataset_fn(files, batch_size,
                                         len(ctxs), shuffle, args.num_buckets, vocab,
                                         num_parts=num_workers, part_idx=rank,
                                         num_workers=args.num_data_workers)
