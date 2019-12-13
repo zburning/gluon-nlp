@@ -1,10 +1,27 @@
 import numpy as np
 import mxnet as mx
 from gluonnlp.model import GELU
-from gluonnlp.model.bert import BERTLayerNorm
 from mxnet.gluon import nn
 import gluonnlp as nlp
 import os
+
+class BERTLayerNorm(nn.LayerNorm):
+    """BERT style Layer Normalization.
+
+    Epsilon is added inside the square root and set to 1e-12 by default.
+
+    Inputs:
+        - **data**: input tensor with arbitrary shape.
+        - **out**: output tensor with the same shape as `data`.
+    """
+
+    def __init__(self, epsilon=1e-12, in_channels=0, prefix=None, params=None):
+        super(BERTLayerNorm, self).__init__(epsilon=epsilon, in_channels=in_channels,
+                                            prefix=prefix, params=params)
+
+    def hybrid_forward(self, F, data, gamma, beta):
+        """forward computation."""
+        return F.LayerNorm(data, gamma=gamma, beta=beta, axis=self._axis, eps=self._epsilon)
 
 
 class ELECTRAComponent(nlp.model.BERTModel):
