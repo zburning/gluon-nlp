@@ -170,11 +170,11 @@ def get_pretrain_data_text(data, batch_size, num_ctxes, shuffle,
     num_workers : int
         The number of worker processes for dataset contruction.
     """
-    num_files = len(data)
+    num_files = len(nlp.utils.glob(data))
     logging.info('%d files are found.', num_files)
-    # assert num_files >= num_parts, \
-    #     'The number of training text files must be no less than the number of ' \
-    #     'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
+    assert num_files >= num_parts, \
+        'The number of training text files must be no less than the number of ' \
+        'workers/partitions (%d). Only %d files at %s are found.'%(num_parts, num_files, data)
 
     dataset_params = {'tokenizer': tokenizer, 'max_seq_length': max_seq_length,
                       'short_seq_prob': short_seq_prob, 'masked_lm_prob': masked_lm_prob,
