@@ -174,7 +174,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
         masked_id = masked_id.reshape(-1)
         valid_length = valid_length.astype('float32', copy=False)
         return disc_label, classified, masked_id, decoded, \
-               masked_weight, ls1, ls2, valid_length
+               masked_weight, ls1, 50 * ls2, valid_length
 
 def init_comm(backend):
     """Init communication backend"""
@@ -315,6 +315,7 @@ def train(data_train, data_eval, model):
                 for _ in range(num_data):
                     disc_label, classified, masked_id, decoded, \
                     masked_weight, ls1, ls2, valid_length = parallel.get()
+                    print("ls1: {} ls2: {}".format(ls1, ls2))
                     ns_label_list.append(disc_label)
                     ns_pred_list.append(classified)
 
