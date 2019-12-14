@@ -174,7 +174,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
         masked_id = masked_id.reshape(-1)
         valid_length = valid_length.astype('float32', copy=False)
         return disc_label, classified, masked_id, decoded, \
-               masked_weight, ls1, 50 * ls2, valid_length
+               masked_weight, ls1, args.lamb * ls2, valid_length
 
 def init_comm(backend):
     """Init communication backend"""
@@ -315,7 +315,7 @@ def train(data_train, data_eval, model):
                 for _ in range(num_data):
                     disc_label, classified, masked_id, decoded, \
                     masked_weight, ls1, ls2, valid_length = parallel.get()
-                    print("ls1: {} ls2: {}".format(ls1, ls2))
+                    #print("ls1: {} ls2: {}".format(ls1.asnumpy(), ls2.asnumpy()))
                     ns_label_list.append(disc_label)
                     ns_pred_list.append(classified)
 
@@ -363,7 +363,7 @@ def train(data_train, data_eval, model):
                 if is_master_node:
                     save_states(step_num, trainer, args.ckpt_dir, local_rank)
                     if local_rank == 0:
-                        save_parameters(step_num, model.bert, args.ckpt_dir)
+                        save_parameters(step_num, model._electra, args.ckpt_dir)
                 if (step_num + 1) % args.eval_interval == 0 and data_eval:
                     # eval data is always based on a fixed npz file.
                     dataset_eval = get_pretrain_data_npz(data_eval, batch_size_eval,
