@@ -159,11 +159,11 @@ class DataParallelBERT(nlp.utils.Parallelizable):
 
     def forward_backward(self, x):
         """forward backward implementation"""
-        (input_id, masked_id, masked_position, masked_weight, \
+        (input_id_orig, input_id, masked_id, masked_position, masked_weight, \
          next_sentence_label, segment_id, valid_length) = x
         valid_length = valid_length.astype(args.dtype, copy=False)
         with mx.autograd.record():
-            decoded, classified, disc_label, ls1, ls2 = self._model(input_id, masked_id, masked_position, masked_weight, segment_id, valid_length)
+            decoded, classified, disc_label, ls1, ls2 = self._model(input_id_orig, input_id, masked_id, masked_position, masked_weight, segment_id, valid_length)
             ls = ls1 + args.lamb * ls2
             ls = ls / args.accumulate
         if self._trainer:

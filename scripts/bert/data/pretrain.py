@@ -42,7 +42,7 @@ class BERTSamplerFn(SamplerFn):
             lengths = dataset.get_field('valid_lengths')
         else:
             # dataset is a BERTPretrainDataset:
-            lengths = dataset.transform(lambda input_ids, segment_ids, masked_lm_positions, \
+            lengths = dataset.transform(lambda input_ids_orig, input_ids, segment_ids, masked_lm_positions, \
                                                masked_lm_ids, masked_lm_weights, \
                                                next_sentence_labels, valid_lengths: \
                                                valid_lengths, lazy=False)
@@ -61,7 +61,8 @@ class BERTDataLoaderFn(DataLoaderFn):
     def __init__(self, num_ctxes, vocab):
         self._num_ctxes = num_ctxes
         pad_val = vocab[vocab.padding_token]
-        self._batchify_fn = Tuple(Pad(pad_val=pad_val, round_to=8), # input_id
+        self._batchify_fn = Tuple(Pad(pad_val=pad_val, round_to=8), # input_id_orig
+                                  Pad(pad_val=pad_val, round_to=8), # input_id
                                   Pad(pad_val=pad_val),             # masked_id
                                   Pad(pad_val=0),                   # masked_position
                                   Pad(pad_val=0),                   # masked_weight

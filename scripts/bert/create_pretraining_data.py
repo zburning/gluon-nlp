@@ -32,8 +32,9 @@ from gluonnlp.data import BERTTokenizer
 class TrainingInstance:
     """A single training instance (sentence pair)."""
 
-    def __init__(self, tokens, segment_ids, masked_lm_positions,
+    def __init__(self, tokens_orig, tokens, segment_ids, masked_lm_positions,
                  masked_lm_labels, is_random_next, vocab):
+        self.tokens_orig = tokens_orig
         self.tokens = tokens
         self.segment_ids = segment_ids
         self.is_random_next = is_random_next
@@ -43,8 +44,10 @@ class TrainingInstance:
 
     def __str__(self):
         tks = self.vocab.to_tokens(self.tokens)
+        tks_orig = self.vocab.to_tokens(self.tokens_orig)
         mask_tks = self.vocab.to_tokens(self.masked_lm_labels)
         s = ''
+        s += 'origin tokens: %s\n' % (' '.join(tks_orig))
         s += 'tokens: %s\n' % (' '.join(tks))
         s += 'segment_ids: %s\n' % (' '.join(
             [str(x) for x in self.segment_ids]))
@@ -61,7 +64,9 @@ class TrainingInstance:
 def transform(instance, max_seq_length):
     """Transform instance to inputs for MLM and NSP."""
     input_ids = instance.tokens
+    input_ids_orig = instance.tokens_orig
     assert len(input_ids) <= max_seq_length
+    assert len(input_ids_orig) <= max_seq_length
     segment_ids = instance.segment_ids
     masked_lm_positions = instance.masked_lm_positions
     valid_lengths = len(input_ids)
@@ -72,6 +77,7 @@ def transform(instance, max_seq_length):
     next_sentence_label = 1 if instance.is_random_next else 0
 
     features = {}
+    features['input_ids_orig'] = input_ids_orig
     features['input_ids'] = input_ids
     features['segment_ids'] = segment_ids
     features['masked_lm_positions'] = masked_lm_positions
@@ -134,6 +140,7 @@ def tokenize_lines_fn(x):
 
 def convert_to_npz(instances, max_seq_length):
     """Create masked language model and next sentence prediction samples as numpy arrays."""
+    inpt_ids_orig = []
     input_ids = []
     segment_ids = []
     masked_lm_positions = []
@@ -144,6 +151,7 @@ def convert_to_npz(instances, max_seq_length):
 
     for inst_index, instance in enumerate(instances):
         features = transform(instance, max_seq_length)
+        input_id_orig = features['input_ids_orig']
         input_id = features['input_ids']
         segment_id = features['segment_ids']
         masked_lm_position = features['masked_lm_positions']
@@ -152,6 +160,7 @@ def convert_to_npz(instances, max_seq_length):
         next_sentence_label = features['next_sentence_labels'][0]
         valid_length = features['valid_lengths'][0]
 
+        inpt_ids_orig.append(np.ascontiguousarray(input_id_orig, dtype='int32'))
         input_ids.append(np.ascontiguousarray(input_id, dtype='int32'))
         segment_ids.append(np.ascontiguousarray(segment_id, dtype='int32'))
         masked_lm_positions.append(np.ascontiguousarray(masked_lm_position, dtype='int32'))
@@ -162,7 +171,7 @@ def convert_to_npz(instances, max_seq_length):
         # debugging information
         if inst_index < 1:
             print_example(instance, features)
-    return input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,\
+    return inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,\
            next_sentence_labels, segment_ids, valid_lengths
 
 def create_training_instances(x):
@@ -275,19 +284,19 @@ def create_training_instances(x):
                          vocab, tokenizer)))
         npz_instances = convert_to_npz(instances, max_seq_length)
 
-    (input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
+    (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
      next_sentence_labels, segment_ids, valid_lengths) = npz_instances
 
     # write output to files. Used when pre-generating files
     if output_file:
-        features = (input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
+        features = (inpt_ids_orig, input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
                     masked_lm_weights, next_sentence_labels, valid_lengths)
         logging.debug('*** Writing to output file %s ***', output_file)
         write_to_files_np(features, tokenizer, max_seq_length,
                           max_predictions_per_seq, [output_file])
         features = None
     else:
-        features = (input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
+        features = (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
                     next_sentence_labels, segment_ids, valid_lengths)
     time_end = time.time()
     logging.debug('Process %d files took %.1f s', len(input_files), time_end - time_start)
@@ -389,19 +398,20 @@ def create_instances_from_document(x):
                     segment_ids.append(1)
                 tokens.append(_SEP_TOKEN)
                 segment_ids.append(1)
-
-                (tokens, masked_lm_positions,
+                (tokens_masked, masked_lm_positions,
                  masked_lm_labels) = create_masked_lm_predictions(
                      tokens, masked_lm_prob, max_predictions_per_seq,
                      whole_word_mask, vocab, tokenizer,
                      _MASK_TOKEN, _CLS_TOKEN, _SEP_TOKEN)
                 instance = TrainingInstance(
-                    tokens=tokens,
+                    tokens_orig=tokens,
+                    tokens=tokens_masked,
                     segment_ids=segment_ids,
                     is_random_next=is_random_next,
                     masked_lm_positions=masked_lm_positions,
                     masked_lm_labels=masked_lm_labels,
                     vocab=vocab)
+                #print("instansL: ", instance)
                 instances.append(instance)
             current_chunk = []
             current_length = 0
