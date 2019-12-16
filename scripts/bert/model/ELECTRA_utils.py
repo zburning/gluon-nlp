@@ -162,7 +162,7 @@ def get_model(hparams, dataset_name=None, vocab=None,
 
     return net, bert_vocab
 
-class ELECTRA(mx.gluon.HybridBlock):
+class ELECTRA(mx.gluon.Block):
     def __init__(self, generator, discriminator, sampling=True, units=768, dropout=0, prefix=None, params=None):
         super(ELECTRA, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
@@ -178,20 +178,18 @@ class ELECTRA(mx.gluon.HybridBlock):
     def __call__(self, input_orig, inputs, token_types, valid_length=None, masked_positions=None, mp_mask=None):
         return super(ELECTRA, self).__call__(input_orig, inputs, token_types, valid_length, masked_positions, mp_mask)
 
-    def hybrid_forward(self, F, inputs_orig, inputs, token_types, valid_length=None, masked_positions=None, mp_mask=None):
+    def forward(self, inputs_orig, inputs, token_types, valid_length=None, masked_positions=None, mp_mask=None):
         gen_output, decoded_full, decoded_masked = self._G(inputs, token_types, valid_length, masked_positions)
         #Considering using sampling here?
-
+        F = mx.ndarray
         disc_sampled = F.argmax(decoded_full, axis=-1) if not self._sampling \
-            else F.random.multinomial(F.softmax(decoded_full))
-
+            else F.random.multinomial(F.softmax(decoded_full), get_prob=False)
+        disc_sampled = disc_sampled.detach()
         disc_input = inputs_orig * mp_mask + disc_sampled * (1 - mp_mask)
         disc_label = disc_input.astype('int32').__eq__(inputs_orig)
 
-        #disc_label2 = F.equal(disc_input.astype('int32'), inputs)
         disc_output = self._D(disc_input, token_types, valid_length)
         classified = self.classifier(self.pooler(disc_output)).squeeze(-1)
-        #print(decoded_masked, classified, decoded_full, gen_output, disc_output)
         return (decoded_masked, classified, disc_label, decoded_full, gen_output, disc_output)
 
 
@@ -212,7 +210,7 @@ def get_ELECTRA_for_pretrain(ctx, dataset_name=None, sampling=True, prefix=None,
         return model, vocab_g
 
 
-class ELECTRIAForPretrain(mx.gluon.HybridBlock):
+class ELECTRIAForPretrain(mx.gluon.Block):
     def __init__(self, electra, vocab_size, prefix=None, params=None):
         super(ELECTRIAForPretrain, self).__init__(prefix=prefix, params=params)
         self._electra = electra
@@ -225,7 +223,7 @@ class ELECTRIAForPretrain(mx.gluon.HybridBlock):
         return super(ELECTRIAForPretrain, self).__call__(input_id_orig, input_id, masked_id, masked_position, mp_mask,
                                                   masked_weight, segment_id, sp_tokens_mask, valid_length)
 
-    def hybrid_forward(self, F, input_id_orig, input_id, masked_id, masked_position, mp_mask,
+    def forward(self, input_id_orig, input_id, masked_id, masked_position, mp_mask,
                        masked_weight, segment_id, sp_mask, valid_length):
         # pylint: disable=arguments-differ
         num_masks = masked_weight.sum() + 1e-8
