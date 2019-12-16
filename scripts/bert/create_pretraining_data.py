@@ -33,7 +33,7 @@ class TrainingInstance:
     """A single training instance (sentence pair)."""
 
     def __init__(self, tokens_orig, tokens, segment_ids, masked_lm_positions,
-                 masked_lm_labels, is_random_next, vocab):
+                 masked_lm_labels, is_random_next, vocab, p_mask, lm_mask):
         self.tokens_orig = tokens_orig
         self.tokens = tokens
         self.segment_ids = segment_ids
@@ -41,6 +41,8 @@ class TrainingInstance:
         self.masked_lm_positions = masked_lm_positions
         self.masked_lm_labels = masked_lm_labels
         self.vocab = vocab
+        self.p_mask = p_mask
+        self.lm_mask = lm_mask
 
     def __str__(self):
         tks = self.vocab.to_tokens(self.tokens)
@@ -49,11 +51,14 @@ class TrainingInstance:
         s = ''
         s += 'origin tokens: %s\n' % (' '.join(tks_orig))
         s += 'tokens: %s\n' % (' '.join(tks))
+        s += 'special token mask: %s\n' % (' '.join([str(x) for x in self.p_mask]))
         s += 'segment_ids: %s\n' % (' '.join(
             [str(x) for x in self.segment_ids]))
         s += 'is_random_next: %s\n' % self.is_random_next
         s += 'masked_lm_positions: %s\n' % (' '.join(
             [str(x) for x in self.masked_lm_positions]))
+        s += 'masked_lm_positions_masks: %s\n' % (' '.join(
+            [str(x) for x in self.lm_mask]))
         s += 'masked_lm_labels: %s\n' % (' '.join(mask_tks))
         s += '\n'
         return s
@@ -69,6 +74,8 @@ def transform(instance, max_seq_length):
     assert len(input_ids_orig) <= max_seq_length
     segment_ids = instance.segment_ids
     masked_lm_positions = instance.masked_lm_positions
+    masked_lm_positions_mask = instance.lm_mask
+    special_tokens_mask = instance.p_mask
     valid_lengths = len(input_ids)
 
     masked_lm_ids = instance.masked_lm_labels
@@ -81,6 +88,8 @@ def transform(instance, max_seq_length):
     features['input_ids'] = input_ids
     features['segment_ids'] = segment_ids
     features['masked_lm_positions'] = masked_lm_positions
+    features['masked_lm_positions_mask'] = masked_lm_positions_mask
+    features['special_tokens_mask'] = special_tokens_mask
     features['masked_lm_ids'] = masked_lm_ids
     features['masked_lm_weights'] = masked_lm_weights
     features['next_sentence_labels'] = [next_sentence_label]
@@ -144,6 +153,8 @@ def convert_to_npz(instances, max_seq_length):
     input_ids = []
     segment_ids = []
     masked_lm_positions = []
+    position_masks = []
+    masked_lm_masks = []
     masked_lm_ids = []
     masked_lm_weights = []
     next_sentence_labels = []
@@ -154,7 +165,9 @@ def convert_to_npz(instances, max_seq_length):
         input_id_orig = features['input_ids_orig']
         input_id = features['input_ids']
         segment_id = features['segment_ids']
+        position_mask = features['special_tokens_mask']
         masked_lm_position = features['masked_lm_positions']
+        masked_lm_mask = features['masked_lm_positions_mask']
         masked_lm_id = features['masked_lm_ids']
         masked_lm_weight = features['masked_lm_weights']
         next_sentence_label = features['next_sentence_labels'][0]
@@ -163,16 +176,18 @@ def convert_to_npz(instances, max_seq_length):
         inpt_ids_orig.append(np.ascontiguousarray(input_id_orig, dtype='int32'))
         input_ids.append(np.ascontiguousarray(input_id, dtype='int32'))
         segment_ids.append(np.ascontiguousarray(segment_id, dtype='int32'))
+        position_masks.append(np.ascontiguousarray(position_mask, dtype='int32'))
         masked_lm_positions.append(np.ascontiguousarray(masked_lm_position, dtype='int32'))
         masked_lm_ids.append(np.ascontiguousarray(masked_lm_id, dtype='int32'))
+        masked_lm_masks.append(np.ascontiguousarray(masked_lm_mask, dtype='int32'))
         masked_lm_weights.append(np.ascontiguousarray(masked_lm_weight, dtype='float32'))
         next_sentence_labels.append(next_sentence_label)
         valid_lengths.append(valid_length)
         # debugging information
         if inst_index < 1:
             print_example(instance, features)
-    return inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,\
-           next_sentence_labels, segment_ids, valid_lengths
+    return inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_masks, masked_lm_weights,\
+           next_sentence_labels, segment_ids, position_masks, valid_lengths
 
 def create_training_instances(x):
     """Create `TrainingInstance`s from raw text.
@@ -284,20 +299,20 @@ def create_training_instances(x):
                          vocab, tokenizer)))
         npz_instances = convert_to_npz(instances, max_seq_length)
 
-    (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
-     next_sentence_labels, segment_ids, valid_lengths) = npz_instances
+    (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_masks, masked_lm_weights,\
+        next_sentence_labels, segment_ids, position_masks, valid_lengths) = npz_instances
 
     # write output to files. Used when pre-generating files
     if output_file:
-        features = (inpt_ids_orig, input_ids, segment_ids, masked_lm_positions, masked_lm_ids,
-                    masked_lm_weights, next_sentence_labels, valid_lengths)
+        features = (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_masks, masked_lm_weights,\
+        next_sentence_labels, segment_ids, position_masks, valid_lengths)
         logging.debug('*** Writing to output file %s ***', output_file)
         write_to_files_np(features, tokenizer, max_seq_length,
                           max_predictions_per_seq, [output_file])
         features = None
     else:
-        features = (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_weights,
-                    next_sentence_labels, segment_ids, valid_lengths)
+        features = (inpt_ids_orig, input_ids, masked_lm_ids, masked_lm_positions, masked_lm_masks, masked_lm_weights,\
+        next_sentence_labels, segment_ids, position_masks, valid_lengths)
     time_end = time.time()
     logging.debug('Process %d files took %.1f s', len(input_files), time_end - time_start)
     return features
@@ -386,20 +401,24 @@ def create_instances_from_document(x):
                 tokens = []
                 segment_ids = []
                 tokens.append(_CLS_TOKEN)
+                p_mask = [0]
                 segment_ids.append(0)
                 for token in tokens_a:
                     tokens.append(token)
                     segment_ids.append(0)
+                    p_mask.append(1)
                 tokens.append(_SEP_TOKEN)
                 segment_ids.append(0)
-
+                p_mask.append(0)
                 for token in tokens_b:
                     tokens.append(token)
                     segment_ids.append(1)
+                    p_mask.append(1)
                 tokens.append(_SEP_TOKEN)
                 segment_ids.append(1)
+                p_mask.append(0)
                 (tokens_masked, masked_lm_positions,
-                 masked_lm_labels) = create_masked_lm_predictions(
+                 masked_lm_labels, lm_mask) = create_masked_lm_predictions(
                      tokens, masked_lm_prob, max_predictions_per_seq,
                      whole_word_mask, vocab, tokenizer,
                      _MASK_TOKEN, _CLS_TOKEN, _SEP_TOKEN)
@@ -410,8 +429,9 @@ def create_instances_from_document(x):
                     is_random_next=is_random_next,
                     masked_lm_positions=masked_lm_positions,
                     masked_lm_labels=masked_lm_labels,
-                    vocab=vocab)
-                #print("instansL: ", instance)
+                    vocab=vocab,
+                    p_mask=p_mask,
+                    lm_mask=lm_mask)
                 instances.append(instance)
             current_chunk = []
             current_length = 0
@@ -455,6 +475,7 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
                          max(1, int(round(len(tokens) * masked_lm_prob))))
 
     masked_lms = []
+    p_mask = [1] * len(output_tokens)
     covered_indexes = set()
     for index_set in cand_indexes:
         if len(masked_lms) >= num_to_predict:
@@ -485,18 +506,16 @@ def create_masked_lm_predictions(tokens, masked_lm_prob, max_predictions_per_seq
             #         masked_token = random.randint(0, len(vocab) - 1)
 
             output_tokens[index] = masked_token
-
+            p_mask[index] = 0
             masked_lms.append(MaskedLmInstance(index=index, label=tokens[index]))
     assert len(masked_lms) <= num_to_predict
     masked_lms = sorted(masked_lms, key=lambda x: x.index)
-
     masked_lm_positions = []
     masked_lm_labels = []
     for p in masked_lms:
         masked_lm_positions.append(p.index)
         masked_lm_labels.append(p.label)
-
-    return (output_tokens, masked_lm_positions, masked_lm_labels)
+    return (output_tokens, masked_lm_positions, masked_lm_labels, p_mask)
 
 
 def truncate_seq_pair(tokens_a, tokens_b, max_num_tokens):

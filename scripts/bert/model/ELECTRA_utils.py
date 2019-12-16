@@ -163,25 +163,29 @@ def get_model(hparams, dataset_name=None, vocab=None,
     return net, bert_vocab
 
 class ELECTRA(mx.gluon.HybridBlock):
-    def __init__(self, generator, discriminator, units=768, dropout=0, prefix=None, params=None):
+    def __init__(self, generator, discriminator, sampling=True, units=768, dropout=0, prefix=None, params=None):
         super(ELECTRA, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
             self._G = generator
             self._D = discriminator
+            self._sampling = sampling
             self.classifier = nn.HybridSequential(prefix=prefix)
             if dropout:
                 self.classifier.add(nn.Dropout(rate=dropout))
             self.classifier.add(nn.Dense(units=1, flatten=False))
             self.pooler = nn.Dense(units=units, flatten=False, activation='tanh', prefix=prefix)
 
-    def __call__(self, input_orig, inputs, token_types, valid_length=None, masked_positions=None):
-        return super(ELECTRA, self).__call__(input_orig, inputs, token_types, valid_length, masked_positions)
+    def __call__(self, input_orig, inputs, token_types, valid_length=None, masked_positions=None, mp_mask=None):
+        return super(ELECTRA, self).__call__(input_orig, inputs, token_types, valid_length, masked_positions, mp_mask)
 
-    def hybrid_forward(self, F, inputs_orig, inputs, token_types, valid_length=None, masked_positions=None):
+    def hybrid_forward(self, F, inputs_orig, inputs, token_types, valid_length=None, masked_positions=None, mp_mask=None):
         gen_output, decoded_full, decoded_masked = self._G(inputs, token_types, valid_length, masked_positions)
         #Considering using sampling here?
-        disc_input = F.argmax(decoded_full, axis=-1)
 
+        disc_sampled = F.argmax(decoded_full, axis=-1) if not self._sampling \
+            else F.random.multinomial(F.softmax(decoded_full))
+
+        disc_input = inputs_orig * mp_mask + disc_sampled * (1 - mp_mask)
         disc_label = disc_input.astype('int32').__eq__(inputs_orig)
 
         #disc_label2 = F.equal(disc_input.astype('int32'), inputs)
@@ -193,7 +197,7 @@ class ELECTRA(mx.gluon.HybridBlock):
 
 
 
-def get_ELECTRA_for_pretrain(ctx, dataset_name=None, prefix=None, params=None):
+def get_ELECTRA_for_pretrain(ctx, dataset_name=None, sampling=True, prefix=None, params=None):
         generator, vocab_g = get_model(small_ELECTRIA_generator_hparams, dataset_name=dataset_name,
                                        use_classifier=False, use_pooler=False, ctx=ctx, emb_proj=True)
 
@@ -203,13 +207,8 @@ def get_ELECTRA_for_pretrain(ctx, dataset_name=None, prefix=None, params=None):
         net = ELECTRA(generator, discriminator)
         net.initialize(init=mx.init.Normal(0.02), ctx=ctx)
 
-        #net.hybridize(static_alloc=True)
-
-        #mlm_loss.hybridize(static_alloc=True, static_shape=True)
-        #disc_loss.hybridize(static_alloc=True, static_shape=True)
-
         model = ELECTRIAForPretrain(net, len(vocab_g))
-        #model.hybridize(static_alloc=True)
+        model.hybridize(static_alloc=True)
         return model, vocab_g
 
 
@@ -221,30 +220,25 @@ class ELECTRIAForPretrain(mx.gluon.HybridBlock):
         self._disc_loss = mx.gluon.loss.SigmoidBCELoss()
         self._vocab_size = vocab_size
 
-    def __call__(self, input_id_orig, input_id, masked_id, masked_position, masked_weight, segment_id=None, valid_length=None):
-        return super(ELECTRIAForPretrain, self).__call__(input_id_orig, input_id, masked_id, masked_position,
-                                                  masked_weight, segment_id, valid_length)
+    def __call__(self, input_id_orig, input_id, masked_id, masked_position, mp_mask, masked_weight, segment_id=None,
+                 sp_tokens_mask=None, valid_length=None):
+        return super(ELECTRIAForPretrain, self).__call__(input_id_orig, input_id, masked_id, masked_position, mp_mask,
+                                                  masked_weight, segment_id, sp_tokens_mask, valid_length)
 
-    def _padding_mask(self, F, inputs, valid_length):
-        steps = F.contrib.arange_like(inputs, axis=1)
-        mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
-                                   F.reshape(valid_length, shape=(-1, 1)))
-
-        return mask
-
-    def hybrid_forward(self, F, input_id_orig, input_id, masked_id, masked_position, masked_weight, segment_id, valid_length):
+    def hybrid_forward(self, F, input_id_orig, input_id, masked_id, masked_position, mp_mask,
+                       masked_weight, segment_id, sp_mask, valid_length):
         # pylint: disable=arguments-differ
         num_masks = masked_weight.sum() + 1e-8
+        valid_tokens = sp_mask.sum() + 1e-8
         valid_length = valid_length.reshape(-1)
         masked_id = masked_id.reshape(-1)
-        decoded, classified, disc_label, _, _, _ = self._electra(input_id_orig, input_id, segment_id, valid_length, masked_position)
+        decoded, classified, disc_label, _, _, _ = self._electra(input_id_orig, input_id, segment_id, valid_length,
+                                                                 masked_position, mp_mask)
         decoded = decoded.reshape((-1, self._vocab_size))
         ls1 = self._mlm_loss(decoded.astype('float32'),
                             masked_id, masked_weight.reshape((-1, 1)))
 
-        loss_mask = self._padding_mask(F, classified, valid_length)
-        ls2 = self._disc_loss(classified.astype('float32'), disc_label.astype('float32'), loss_mask)
+        ls2 = self._disc_loss(classified.astype('float32'), disc_label.astype('float32'), sp_mask.astype('float32'))
         ls1 = ls1.sum() / num_masks
-        ls2 = ls2.mean() / valid_length.sum()
-
+        ls2 = ls2.sum() / valid_tokens.astype('float32')
         return decoded, classified, disc_label, ls1, ls2

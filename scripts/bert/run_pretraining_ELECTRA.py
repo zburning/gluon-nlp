@@ -159,22 +159,25 @@ class DataParallelBERT(nlp.utils.Parallelizable):
 
     def forward_backward(self, x):
         """forward backward implementation"""
-        (input_id_orig, input_id, masked_id, masked_position, masked_weight, \
-         next_sentence_label, segment_id, valid_length) = x
+        (input_ids_orig, input_id, masked_lm_id, masked_lm_position, masked_lm_mask, masked_lm_weight, \
+         next_sentence_label, segment_id, sp_tokens_mask, valid_length)= x
         valid_length = valid_length.astype(args.dtype, copy=False)
         with mx.autograd.record():
-            decoded, classified, disc_label, ls1, ls2 = self._model(input_id_orig, input_id, masked_id, masked_position, masked_weight, segment_id, valid_length)
+            decoded, classified, disc_label, ls1, ls2 = self._model(input_ids_orig, input_id,
+                                                                    masked_lm_id, masked_lm_position, masked_lm_mask,
+                                                                    masked_lm_weight, segment_id,
+                                                                    sp_tokens_mask, valid_length)
+
             ls = ls1 + args.lamb * ls2
             ls = ls / args.accumulate
         if self._trainer:
             self._trainer.backward(ls)
         else:
             ls.backward()
-
-        masked_id = masked_id.reshape(-1)
+        masked_id = masked_lm_id.reshape(-1)
         valid_length = valid_length.astype('float32', copy=False)
         return disc_label, classified, masked_id, decoded, \
-               masked_weight, ls1, args.lamb * ls2, valid_length
+               masked_lm_weight, ls1, args.lamb * ls2, valid_length
 
 def init_comm(backend):
     """Init communication backend"""
@@ -241,8 +244,9 @@ def train(data_train, data_eval, model):
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, 'lamb', optim_params)
     else:
-        trainer = mx.gluon.Trainer(param_dict, 'bertadam', optim_params,
+        trainer = mx.gluon.Trainer(param_dict, 'lamb', optim_params,
                                    update_on_kvstore=False)
+
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
                                loss_scaler_params=loss_scale_param)
 

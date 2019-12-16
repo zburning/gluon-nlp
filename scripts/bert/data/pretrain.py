@@ -42,10 +42,7 @@ class BERTSamplerFn(SamplerFn):
             lengths = dataset.get_field('valid_lengths')
         else:
             # dataset is a BERTPretrainDataset:
-            lengths = dataset.transform(lambda input_ids_orig, input_ids, segment_ids, masked_lm_positions, \
-                                               masked_lm_ids, masked_lm_weights, \
-                                               next_sentence_labels, valid_lengths: \
-                                               valid_lengths, lazy=False)
+            lengths = dataset.transform(lambda *feature: feature[-1], lazy=False)
         # calculate total batch size for all GPUs
         batch_size = self._batch_size * self._num_ctxes
         sampler = nlp.data.FixedBucketSampler(lengths,
@@ -65,9 +62,11 @@ class BERTDataLoaderFn(DataLoaderFn):
                                   Pad(pad_val=pad_val, round_to=8), # input_id
                                   Pad(pad_val=pad_val),             # masked_id
                                   Pad(pad_val=0),                   # masked_position
+                                  Pad(pad_val=0),                   # masked_position_mask
                                   Pad(pad_val=0),                   # masked_weight
                                   Stack(),                          # next_sentence_label
                                   Pad(pad_val=0, round_to=8),       # segment_id
+                                  Pad(pad_val=0),                   # special_token_mask
                                   Stack())                          # valid_length
 
     def __call__(self, dataset, sampler):
