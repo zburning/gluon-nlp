@@ -195,8 +195,8 @@ if args.model_parameters:
 nlp.utils.mkdir(output_dir)
 
 logging.debug(model)
-model.hybridize(static_alloc=True)
-loss_function.hybridize(static_alloc=True)
+#model.hybridize(static_alloc=True)
+#loss_function.hybridize(static_alloc=True)
 
 # data processing
 do_lower_case = 'uncased' in args.dataset
@@ -406,8 +406,8 @@ def train(metric):
                     if args.accumulate and args.accumulate > 1:
                         # set grad to zero for gradient accumulation
                         all_model_params.zero_grad()
-                    toc = time.time()
-                    logging.info('Time cost for the first forward-backward =%.2fs', toc - tic)
+                    #toc = time.time()
+                    #logging.info('Time cost for the first forward-backward =%.2fs', toc - tic)
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
                 if (batch_id + 1) % (args.log_interval) == 0:
@@ -472,7 +472,7 @@ def evaluate(loader_dev, metric, segment):
             label = label.reshape((-1))
             out = model(input_ids, segment_ids, valid_length=valid_length)
             out_list.append(out.as_in_context(mx.cpu(0)))
-            label_list.append(label.as_in_context(mx.cpu(0)))
+            label_list.append(label.reshape(-1, 1).as_in_context(mx.cpu(0)))
             batch_loss.append(loss_function(out, label).mean() / len(ctxs))
 
         batch_loss = sum([ls.asscalar() for ls in batch_loss])
