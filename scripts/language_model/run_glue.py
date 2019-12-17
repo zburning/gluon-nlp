@@ -346,6 +346,7 @@ def train(metric):
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
     num_train_steps = int(num_train_examples / step_size * args.epochs)
+    logging.info('training steps=%fs', num_train_steps)
     warmup_ratio = args.warmup_ratio
     num_warmup_steps = int(num_train_steps * warmup_ratio)
     step_num = 0
@@ -366,7 +367,6 @@ def train(metric):
     patience = args.early_stop
 
     tic = time.time()
-    logging.info('start time for training=%fs', tic)
     for epoch_id in range(args.epochs):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
