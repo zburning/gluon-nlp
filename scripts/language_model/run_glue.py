@@ -175,7 +175,7 @@ else:
     num_classes = len(task.class_labels)
     loss_function = gluon.loss.SoftmaxCELoss()
 # reuse the XLnetClassifier class with num_classes=1 for regression
-model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0.1,
+model = XLNetClassifier(xlnet_base, units=xlnet_base._net._units, dropout=0,
                         num_classes=num_classes)
 
 num_ctxes = len(ctxs)
