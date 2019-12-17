@@ -366,6 +366,7 @@ def train(metric):
     patience = args.early_stop
 
     tic = time.time()
+    logging.info('start time for training=%fs', tic)
     for epoch_id in range(args.epochs):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
