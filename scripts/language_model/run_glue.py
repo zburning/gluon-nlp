@@ -195,8 +195,8 @@ if args.model_parameters:
 nlp.utils.mkdir(output_dir)
 
 logging.debug(model)
-#model.hybridize(static_alloc=True)
-#loss_function.hybridize(static_alloc=True)
+model.hybridize(static_alloc=True)
+loss_function.hybridize(static_alloc=True)
 
 # data processing
 do_lower_case = 'uncased' in args.dataset
