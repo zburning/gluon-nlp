@@ -406,8 +406,9 @@ def train(metric):
                     if args.accumulate and args.accumulate > 1:
                         # set grad to zero for gradient accumulation
                         all_model_params.zero_grad()
-                    #toc = time.time()
-                    #logging.info('Time cost for the first forward-backward =%.2fs', toc - tic)
+                    if batch_id == 0:
+                        toc = time.time()
+                        logging.info('Time cost for the first forward-backward =%.2fs', toc - tic)
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
                 step_loss += batch_loss
                 if (batch_id + 1) % (args.log_interval) == 0:
