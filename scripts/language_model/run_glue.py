@@ -246,7 +246,7 @@ def preprocess_data(_tokenizer, _task, _batch_size, _dev_batch_size, max_len, _v
                                                         num_buckets=10, ratio=0, shuffle=True)
     # data loader for training
     loader_train = gluon.data.DataLoader(dataset=data_train, num_workers=num_workers,
-                                         batch_sampler=batch_sampler, batchify_fn=batchify_fn)
+                                         batch_size=_batch_size, batchify_fn=batchify_fn, shuffle=True)
 
     # data dev. For MNLI, more than one dev set is available
     dev_tsv = _task.dataset_dev()
