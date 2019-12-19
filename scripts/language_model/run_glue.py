@@ -77,7 +77,7 @@ parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for fi
 parser.add_argument('--task_name', default='MRPC', type=str,
                     help='The name of the task to fine-tune.')
 
-parser.add_argument('--model_name', type=str, default='xlnet_cased_l12_h768_a12',
+parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
                     choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
                     help='The name of pre-trained XLNet model to fine-tune')
 
