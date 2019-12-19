@@ -121,7 +121,7 @@ def split_and_load(arrs, ctxs):
     """split and load arrays to a list of contexts"""
     assert isinstance(arrs, (list, tuple))
     # split and load    
-    loaded_arrs = [[i.as_in_context(ctx) for i, ctx in zip(split_array(arr, len(ctx)), ctxs)] for arr in arrs]
+    loaded_arrs = [[i.as_in_context(ctx) for i, ctx in zip(split_array(arr, len(ctxs)), ctxs)] for arr in arrs]
     return zip(*loaded_arrs)
 
 
