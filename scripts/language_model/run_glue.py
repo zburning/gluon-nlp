@@ -110,10 +110,15 @@ args = parser.parse_args()
 
 def split_array(arr, num_of_splits):
     size = arr.shape[0]
+    if size < num_of_splits:
+        return [arr[i: i+1] for i in range(size)]
     slice_len, rest = divmod(size, num_of_splits)
     div_points = [0] + [(slice_len * index + min(index, rest) + slice_len + (index < rest))
                         for index in range(num_of_splits)]
-    slices = [arr[div_points[i]: div_points[i + 1]] for i in range(num_of_splits)]
+    try:
+        slices = [arr[div_points[i]: div_points[i + 1]] for i in range(num_of_splits)]
+    except:
+        breakpoint()
     return slices
 
 
