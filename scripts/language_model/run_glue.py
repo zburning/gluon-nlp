@@ -105,6 +105,7 @@ parser.add_argument(
 parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
+parser.add_argument('--training_steps', type=int , help='training steps')
 args = parser.parse_args()
 
 
@@ -361,6 +362,10 @@ def train(metric):
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
     num_train_steps = int(num_train_examples / step_size * args.epochs)
+    epoch_number = args.epochs
+    if args.training_steps:
+        num_train_steps = args.training_steps
+        epoch_number = 999
     logging.info('training steps=%fs', num_train_steps)
     warmup_ratio = args.warmup_ratio
     num_warmup_steps = int(num_train_steps * warmup_ratio)
@@ -382,9 +387,12 @@ def train(metric):
     patience = args.early_stop
 
     tic = time.time()
-    for epoch_id in range(args.epochs):
+    finish_flag = False
+    for epoch_id in range(epoch_number):
         if args.early_stop and patience == 0:
             logging.info('Early stopping at epoch %d', epoch_id)
+            break
+        if finish_flag:
             break
         if not args.only_inference:
             metric.reset()
@@ -421,7 +429,7 @@ def train(metric):
                     if args.accumulate and args.accumulate > 1:
                         # set grad to zero for gradient accumulation
                         all_model_params.zero_grad()
-                    if batch_id == 0:
+                    if batch_id == 0 and epoch_id == 0:
                         toc = time.time()
                         logging.info('Time cost for the first forward-backward =%.2fs', toc - tic)
                 batch_loss = sum([ls.asscalar() for ls in batch_loss])
@@ -430,6 +438,11 @@ def train(metric):
                     log_train(batch_id, len(train_data), step_loss, args.log_interval,
                               epoch_id, trainer.learning_rate)
                     step_loss = 0
+                if step_num >= num_train_steps:
+                    logging.info('Finish training step: %d', step_num)
+                    finish_flag = True
+                    break
+
             mx.nd.waitall()
 
         # inference on dev data
