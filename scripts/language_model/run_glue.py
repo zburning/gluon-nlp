@@ -17,6 +17,7 @@ import gluonnlp as nlp
 from model.XLNet_classifier import XLNetClassifier
 from transformer import model
 
+os.environ['MXNET_USE_FUSION'] = '0'
 path = sys.path[0]
 sys.path.append(path + '/../bert/data')
 #pylint: disable=wrong-import-position
@@ -107,11 +108,20 @@ parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
 args = parser.parse_args()
 
 
-def split_and_load(arrs, ctx):
+def split_array(arr, num_of_splits):
+    size = arr.shape[0]
+    slice_len, rest = divmod(size, num_of_splits)
+    div_points = [0] + [(slice_len * index + min(index, rest) + slice_len + (index < rest))
+                        for index in range(num_of_splits)]
+    slices = [arr[div_points[i]: div_points[i + 1]] for i in range(num_of_splits)]
+    return slices
+
+
+def split_and_load(arrs, ctxs):
     """split and load arrays to a list of contexts"""
     assert isinstance(arrs, (list, tuple))
-    # split and load
-    loaded_arrs = [mx.gluon.utils.split_and_load(arr, ctx, even_split=False) for arr in arrs]
+    # split and load    
+    loaded_arrs = [[i.as_in_context(ctx) for i, ctx in zip(split_array(arr, len(ctx)), ctxs)] for arr in arrs]
     return zip(*loaded_arrs)
 
 
