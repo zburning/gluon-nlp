@@ -417,8 +417,10 @@ def train(metric):
                         input_ids, valid_length, segment_ids, label = splited_data
                         out = model(input_ids, segment_ids, valid_length=valid_length)
                         ls = loss_function(out, label).mean() / len(ctxs)
-                        ls.backward()
                         batch_loss.append(ls)
+                        if args.accumulate:
+                            ls = ls / args.accumulate
+                        ls.backward()
                 # update
                 if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                     trainer.allreduce_grads()
