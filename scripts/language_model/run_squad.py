@@ -336,6 +336,7 @@ def train():
             data_list = list(split_and_load(data, ctx))
             # forward and backward
             batch_loss = []
+            batch_loss_sep = []
             with mx.autograd.record():
                 for splited_data in data_list:
                     _, inputs, token_types, valid_length, p_mask, start_label, end_label, _is_impossible = splited_data  # pylint: disable=line-too-long
@@ -350,17 +351,24 @@ def train():
                         [start_label, end_label],
                         p_mask=p_mask,  # pylint: disable=line-too-long
                         is_impossible=is_impossible)
-                    ls = out.mean() / len(ctx)
+                    ls = out[0]
+                    if len(out) > 1:
+                        ls += out[1]
+                    ls = ls.mean() / len(ctx)
                     if args.accumulate:
                         ls = ls / args.accumulate
                     batch_loss.append(ls)
+                    batch_loss_sep.append(out)
                     ls.backward()
             # update
             if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1, ignore_stale_grad=True)
-
+            
+            step_loss_sep = np.array([[span_ls.asscalar(), cls_ls.asscalar()] for span_ls, cls_ls in batch_loss_sep])
+            step_loss_sep = list(np.sum(step_loss_sep, axis=0))
+            
             step_loss += sum([ls.asscalar() for ls in batch_loss])
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()
@@ -374,6 +382,7 @@ def train():
                     trainer.learning_rate,
                     toc - tic,
                     log_num / (toc - tic))
+                log.info('span_loss: {}, cls_loss: {}', step_loss_sep[0], step_loss_sep[1])
                 tic = time.time()
                 step_loss = 0.0
                 log_num = 0

@@ -171,6 +171,7 @@ class XLNetForQA(Block):
         attention_mask = self._padding_mask(inputs, valid_length_start).astype('float32')
         output, _ = self.xlnet(inputs, token_types, mems, attention_mask)
         start_logits = self.start_logits(output, p_masks=p_mask)  # shape (bsz, slen)
+
         if not self.eval:
             #training
             start_positions, end_positions = label
@@ -179,13 +180,14 @@ class XLNetForQA(Block):
                          self.loss(end_logit, end_positions)) / 2
 
             cls_loss = None
+            total_loss = [span_loss]
             if self.version2:
                 start_log_probs = mx.nd.softmax(start_logits, axis=-1)
                 start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
                                                transpose_a=True).squeeze(-1)
                 cls_logits = self.answer_class(output, output.shape[0], start_states)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
-            total_loss = span_loss + 0.5 * cls_loss if cls_loss is not None else span_loss
+                total_loss.append(cls_loss)
             return total_loss
         else:
             #inference
