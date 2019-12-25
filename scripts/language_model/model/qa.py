@@ -188,7 +188,7 @@ class XLNetForQA(Block):
                 cls_logits = self.answer_class(output, output.shape[0], start_states)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
                 total_loss.append(cls_loss)
-            total_loss_sum = span_loss + 0.5 * cls_loss if cls_loss in not None else span_loss
+            total_loss_sum = span_loss + 0.5 * cls_loss if cls_loss is not None else span_loss
             return total_loss, total_loss_sum
         else:
             #inference
