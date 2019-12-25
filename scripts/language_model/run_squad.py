@@ -357,6 +357,7 @@ def train():
                     if args.accumulate:
                         ls = ls / args.accumulate
                     batch_loss_sep.append(out_sep)
+                    batch_loss.append(ls)
                     ls.backward()
             # update
             if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
