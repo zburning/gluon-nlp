@@ -186,7 +186,7 @@ class XLNetForQA(Block):
                 # start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
                 #                                transpose_a=True).squeeze(-1)
                 start_states = mx.nd.gather_nd(
-                        hidden_states,
+                        output,
                         mx.nd.concat(mx.nd.arange(bsz).expand_dims(1), start_positions.reshape((bsz, 1))).T)
                 cls_logits = self.answer_class(output, output.shape[0], start_states)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
