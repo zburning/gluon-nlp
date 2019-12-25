@@ -344,21 +344,17 @@ def train():
                     is_impossible = _is_impossible if args.version_2 else None
                     log_num += len(inputs)
                     total_num += len(inputs)
-                    out = net(
+                    out_sep, out = net(
                         inputs,
                         token_types,
                         valid_length,
                         [start_label, end_label],
                         p_mask=p_mask,  # pylint: disable=line-too-long
                         is_impossible=is_impossible)
-                    ls = out[0]
-                    if len(out) > 1:
-                        ls += out[1]
-                    ls = ls.mean() / len(ctx)
+                    ls = out.mean() / len(ctx)
                     if args.accumulate:
                         ls = ls / args.accumulate
-                    batch_loss.append(ls)
-                    batch_loss_sep.append(out)
+                    batch_loss_sep.append(out_sep)
                     ls.backward()
             # update
             if not args.accumulate or (batch_id + 1) % args.accumulate == 0:
