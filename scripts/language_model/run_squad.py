@@ -382,6 +382,9 @@ def train():
                     trainer.learning_rate,
                     toc - tic,
                     log_num / (toc - tic))
+                if args.accumulate:
+                    step_loss_span = step_loss_span / args.accumulate
+                    step_loss_cls = step_loss_cls / args.accumulate
                 log.info('span_loss: %.4f, cls_loss: %.4f', step_loss_span / log_interval, step_loss_cls / log_interval)
                 tic = time.time()
                 step_loss = 0.0
