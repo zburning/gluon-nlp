@@ -121,11 +121,9 @@ def get_raw_scores(dataset, preds):
                 # Take max over all gold answers
                 exact_scores[qid] = max(compute_exact(a, a_pred) for a in gold_answers)
                 # if qid == '56dde0ba66d3e219004dad77':
-                #     print("qid: 56dde0ba66d3e219004dad77")
-                #     print(gold_answers)
-                #     print(preds[qid])
-                #     print(exact_scores[qid])
-                #     print("-"*40)
+
+
+
                 f1_scores[qid] = max(compute_f1(a, a_pred) for a in gold_answers)
     return exact_scores, f1_scores
 
@@ -151,8 +149,6 @@ def make_eval_dict(exact_scores, f1_scores, qid_list=None):
         ])
     else:
         total = len(qid_list)
-        for k in qid_list:
-            print("{} : {}".format(k, exact_scores[k]))
         return collections.OrderedDict([
             ('exact', 100.0 * sum(exact_scores[k] for k in qid_list) / total),
             ('f1', 100.0 * sum(f1_scores[k] for k in qid_list) / total),
@@ -322,14 +318,10 @@ def main(OPTS):
             na_probs = json.load(f)
     else:
         na_probs = {k: 0.0 for k in preds}
-    print("here!!!!")
     qid_to_has_ans = make_qid_to_has_ans(dataset)  # maps qid to True/False
     has_ans_qids = [k for k, v in qid_to_has_ans.items() if v]
-    print("has ans: ", has_ans_qids)
     no_ans_qids = [k for k, v in qid_to_has_ans.items() if not v]
-    print("no ans: ", no_ans_qids)
     exact_raw, f1_raw = get_raw_scores(dataset, preds)
-    print(exact_raw)
 
     exact_thresh = apply_no_ans_threshold(exact_raw, na_probs, qid_to_has_ans, OPTS.na_prob_thresh)
     f1_thresh = apply_no_ans_threshold(f1_raw, na_probs, qid_to_has_ans, OPTS.na_prob_thresh)
@@ -338,7 +330,6 @@ def main(OPTS):
 
     if has_ans_qids:
         has_ans_eval = make_eval_dict(exact_thresh, f1_thresh, qid_list=has_ans_qids)
-        print("has ans eval: ", has_ans_eval)
         merge_eval(out_eval, has_ans_eval, 'HasAns')
     if no_ans_qids:
         no_ans_eval = make_eval_dict(exact_thresh, f1_thresh, qid_list=no_ans_qids)

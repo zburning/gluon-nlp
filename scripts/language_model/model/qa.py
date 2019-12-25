@@ -171,7 +171,7 @@ class XLNetForQA(Block):
         attention_mask = self._padding_mask(inputs, valid_length_start).astype('float32')
         output, _ = self.xlnet(inputs, token_types, mems, attention_mask)
         start_logits = self.start_logits(output, p_masks=p_mask)  # shape (bsz, slen)
-
+        bsz, slen, hsz = output.shape
         if not self.eval:
             #training
             start_positions, end_positions = label
@@ -182,9 +182,12 @@ class XLNetForQA(Block):
             cls_loss = None
             total_loss = [span_loss]
             if self.version2:
-                start_log_probs = mx.nd.softmax(start_logits, axis=-1)
-                start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
-                                               transpose_a=True).squeeze(-1)
+                # start_log_probs = mx.nd.softmax(start_logits, axis=-1)
+                # start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
+                #                                transpose_a=True).squeeze(-1)
+                start_states = mx.nd.gather_nd(
+                        hidden_states,
+                        mx.nd.concat(mx.nd.arange(bsz).expand_dims(1), start_positions.reshape((bsz, 1))).T)
                 cls_logits = self.answer_class(output, output.shape[0], start_states)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
                 total_loss.append(cls_loss)
@@ -192,7 +195,6 @@ class XLNetForQA(Block):
             return total_loss, total_loss_sum
         else:
             #inference
-            bsz, slen, hsz = output.shape
             start_log_probs = mx.nd.softmax(start_logits, axis=-1)  # shape (bsz, slen)
             start_top_log_probs, start_top_index = mx.ndarray.topk(
                 start_log_probs, k=self.start_top_n, axis=-1,
