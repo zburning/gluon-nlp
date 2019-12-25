@@ -362,8 +362,8 @@ def train():
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1, ignore_stale_grad=True)
             
-            step_loss_sep = np.array([[span_ls.mean().asscalar(), cls_ls.mean().asscalar()] for span_ls, cls_ls in batch_loss_sep])
-            step_loss_sep = list(np.sum(step_loss_sep, axis=0))
+            step_loss_sep += np.array([[span_ls.mean().asscalar(), cls_ls.mean().asscalar()] for span_ls, cls_ls in batch_loss_sep])
+            step_loss_sep += list(np.sum(step_loss_sep, axis=0))
             
             step_loss += sum([ls.asscalar() for ls in batch_loss])
             if (batch_id + 1) % log_interval == 0:
@@ -378,7 +378,7 @@ def train():
                     trainer.learning_rate,
                     toc - tic,
                     log_num / (toc - tic))
-                log.info('span_loss: {}, cls_loss: {}', step_loss_sep[0] / log_interval, step_loss_sep[1] / log_interval)
+                log.info('span_loss: %.4f, cls_loss: %.4f', step_loss_sep[0] / log_interval, step_loss_sep[1] / log_interval)
                 tic = time.time()
                 step_loss = 0.0
                 log_num = 0
