@@ -128,6 +128,7 @@ parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 parser.add_argument('--training_steps', type=int, help='training steps')
 
+
 args = parser.parse_args()
 
 # random seed
@@ -203,8 +204,6 @@ if pretrained_xlnet_parameters:
 
 net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n,
                  version_2=args.version_2)
-net_eval = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n,
-                      version_2=args.version_2, is_eval=True, params=net.collect_params())
 
 initializer = mx.init.Normal(0.02)
 
@@ -218,7 +217,6 @@ else:
         net.answer_class.initialize(init=initializer, ctx=ctx)
 
 net.hybridize(static_alloc=True)
-net_eval.hybridize(static_alloc=True)
 
 
 def split_array(arr, num_of_splits):
@@ -267,8 +265,7 @@ def train():
                                                 shuffle=True)
 
     log.info('Start Training')
-
-    optimizer_params = {'learning_rate': args.lr}
+    optimizer_params = {'learning_rate': args.lr, 'wd': 0}
     try:
         trainer = mx.gluon.Trainer(net.collect_params(), args.optimizer, optimizer_params,
                                    update_on_kvstore=False)
@@ -364,7 +361,7 @@ def train():
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1, ignore_stale_grad=True)
-            
+
             step_loss_sep_tmp = np.array([[span_ls.mean().asscalar(), cls_ls.mean().asscalar()] for span_ls, cls_ls in batch_loss_sep])
             step_loss_sep_tmp = list(np.sum(step_loss_sep_tmp, axis=0))
             step_loss_span += step_loss_sep_tmp[0]
@@ -453,7 +450,7 @@ def evaluate(prefix='p'):
         for splited_data in data_list:
             example_ids, inputs, token_types, valid_length, p_mask, _, _, _ = splited_data
             total_num += len(inputs)
-            outputs = net_eval(inputs, token_types, valid_length, p_mask=p_mask)
+            outputs = net(inputs, token_types, valid_length, p_mask=p_mask, is_eval=True)
             example_ids = example_ids.asnumpy().tolist()
             for c, example_ids in enumerate(example_ids):
                 result = RawResultExtended(

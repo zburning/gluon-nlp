@@ -29,9 +29,8 @@ class PoolerStartLogits(HybridBlock):
 
 class PoolerEndLogits(Block):
     """ Compute SQuAD end_logits from sequence hidden states and start token hidden state."""
-    def __init__(self, units=768, is_eval=False, prefix=None, params=None):
+    def __init__(self, units=768, prefix=None, params=None):
         super(PoolerEndLogits, self).__init__(prefix=prefix, params=params)
-        self._eval = is_eval
         self._hsz = units
         with self.name_scope():
             self.dense_0 = nn.Dense(units, activation='tanh', flatten=False)
@@ -39,15 +38,15 @@ class PoolerEndLogits(Block):
             self.layernorm = nn.LayerNorm(epsilon=1e-12, in_channels=768)
 
     def __call__(self, hidden_states, start_states=None,
-                 start_positions=None, p_masks=None):
+                 start_positions=None, p_masks=None, is_eval=False):
         # pylint: disable=arguments-differ
         return super(PoolerEndLogits, self).__call__(hidden_states, start_states, start_positions,
-                                                     p_masks)
+                                                     p_masks, is_eval)
 
-    def forward(self, hidden_states, start_states, start_positions, p_mask):
+    def forward(self, hidden_states, start_states, start_positions, p_mask, is_eval):
         # pylint: disable=arguments-differ
         F = mx.ndarray
-        if not self._eval:
+        if not is_eval:
             start_states = F.gather_nd(
                 hidden_states,
                 F.concat(
@@ -58,7 +57,7 @@ class PoolerEndLogits(Block):
         x = self.dense_0(F.concat(hidden_states, start_states, dim=-1))
         x = self.layernorm(x)
         x = self.dense_1(x).squeeze(-1)
-        if p_mask is not None and self._eval:
+        if p_mask is not None and is_eval:
             p_mask = p_mask.expand_dims(-1)
             p_mask = F.broadcast_like(p_mask, x)
         if p_mask is not None:
@@ -107,8 +106,7 @@ class XLNetForQA(Block):
     params : ParameterDict or None
         See document of `mx.gluon.Block`.
     """
-    def __init__(self, xlnet_base, start_top_n=None, end_top_n=None, version_2=False, is_eval=False,
-                 prefix=None, params=None):
+    def __init__(self, xlnet_base, start_top_n=None, end_top_n=None, version_2=False, prefix=None, params=None):
         super(XLNetForQA, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
             self.xlnet = xlnet_base
@@ -116,20 +114,19 @@ class XLNetForQA(Block):
             self.end_top_n = end_top_n
             self.loss = loss.SoftmaxCELoss()
             self.start_logits = PoolerStartLogits()
-            self.end_logits = PoolerEndLogits(is_eval=is_eval)
+            self.end_logits = PoolerEndLogits()
             self.version2 = version_2
-            self.eval = is_eval
             if version_2:
                 self.answer_class = XLNetPoolerAnswerClass()
                 self.cls_loss = loss.SigmoidBinaryCrossEntropyLoss()
 
     def __call__(self, inputs, token_types, valid_length=None, label=None, p_mask=None,
-                 is_impossible=None, mems=None):
+                 is_impossible=None, mems=None, is_eval=False):
         #pylint: disable=arguments-differ, dangerous-default-value
         """Generate the unnormalized score for the given the input sequences."""
         valid_length = [] if valid_length is None else valid_length
         return super(XLNetForQA, self).__call__(inputs, token_types, valid_length, p_mask, label,
-                                                is_impossible, mems)
+                                                is_impossible, mems, is_eval)
 
     def _padding_mask(self, inputs, valid_length_start, left_pad=True):
         F = mx.ndarray
@@ -146,7 +143,7 @@ class XLNetForQA(Block):
             raise NotImplementedError
         return mask
 
-    def forward(self, inputs, token_types, valid_length, p_mask, label, is_impossible, mems):
+    def forward(self, inputs, token_types, valid_length, p_mask, label, is_impossible, mems, is_eval):
         # pylint: disable=arguments-differ
         """Generate the unnormalized score for the given the input sequences.
 
@@ -172,22 +169,22 @@ class XLNetForQA(Block):
         output, _ = self.xlnet(inputs, token_types, mems, attention_mask)
         start_logits = self.start_logits(output, p_masks=p_mask)  # shape (bsz, slen)
         bsz, slen, hsz = output.shape
-        if not self.eval:
+        if not is_eval:
             #training
             start_positions, end_positions = label
-            end_logit = self.end_logits(output, start_positions=start_positions, p_masks=p_mask)
+            end_logit = self.end_logits(output, start_positions=start_positions, p_masks=p_mask, is_eval=is_eval)
             span_loss = (self.loss(start_logits, start_positions) +
                          self.loss(end_logit, end_positions)) / 2
 
             cls_loss = None
             total_loss = [span_loss]
             if self.version2:
-                # start_log_probs = mx.nd.softmax(start_logits, axis=-1)
-                # start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
-                #                                transpose_a=True).squeeze(-1)
-                start_states = mx.nd.gather_nd(
-                        output,
-                        mx.nd.concat(mx.nd.arange(bsz, ctx=output.context).expand_dims(1), start_positions.reshape((bsz, 1))).T)
+                start_log_probs = mx.nd.softmax(start_logits, axis=-1)
+                start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
+                                               transpose_a=True).squeeze(-1)
+                # start_states = mx.nd.gather_nd(
+                #         output,
+                #         mx.nd.concat(mx.nd.arange(bsz, ctx=output.context).expand_dims(1), start_positions.reshape((bsz, 1))).T)
                 cls_logits = self.answer_class(output, output.shape[0], start_states)
                 cls_loss = self.cls_loss(cls_logits, is_impossible)
                 total_loss.append(cls_loss)
@@ -215,7 +212,7 @@ class XLNetForQA(Block):
                 hidden_states_expanded,
                 shape=start_states.shape)  # shape (bsz, slen, start_n_top, hsz)
             end_logits = self.end_logits(hidden_states_expanded, start_states=start_states,
-                                         p_masks=p_mask)  # shape (bsz, slen, start_n_top)
+                                         p_masks=p_mask, is_eval=is_eval)  # shape (bsz, slen, start_n_top)
             end_log_probs = mx.nd.softmax(end_logits, axis=1)  # shape (bsz, slen, start_n_top)
             # Note that end_top_index and end_top_log_probs have shape (bsz, END_N_TOP, start_n_top)
             # So that for each start position, there are end_n_top end positions on the second dim.
