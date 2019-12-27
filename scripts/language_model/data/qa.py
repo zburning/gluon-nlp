@@ -419,6 +419,27 @@ class SQuADTransform:
                             start_position=start_position, end_position=end_position,
                             is_impossible=span_is_impossible))
         return features
+        
+    def __call__(self, record, evaluate=False):
+        examples = self._transform(*record)
+        if not examples:
+            return None
+        features = []
+
+        for _example in examples:
+            feature = []
+            feature.append(_example.example_id)
+            feature.append(_example.input_ids)
+            feature.append(_example.segment_ids)
+            feature.append(_example.valid_length)
+            feature.append(_example.p_mask)
+            feature.append(_example.start_position)
+            feature.append(_example.end_position)
+            feature.append(_example.is_impossible)
+            feature.append(len(_example.input_ids))
+            features.append(feature)
+
+        return features
 
 
 def _improve_answer_span(doc_tokens, input_start, input_end, tokenizer, orig_answer_text):
