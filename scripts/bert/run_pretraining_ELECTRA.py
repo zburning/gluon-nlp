@@ -51,6 +51,8 @@ from pretraining_utils import save_parameters, save_states, profile
 from pretraining_utils import get_pretrain_data_text, generate_dev_set
 from model.ELECTRA_utils import get_ELECTRA_for_pretrain
 # parser
+os.environ['MXNET_USE_FUSION'] = '0'
+
 parser = argparse.ArgumentParser(description='BERT pretraining example.')
 # logging and serialization
 parser.add_argument('--ckpt_dir', type=str, default='./ckpt_dir',
