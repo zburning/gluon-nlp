@@ -258,9 +258,9 @@ class SQuADTransform:
             return None
 
         padding = self.vocab.padding_token
-
         if self.do_lookup:
             padding = self.vocab[padding]
+
         features = []
         query_tokens = self.tokenizer(example.question_text)
 
@@ -289,9 +289,9 @@ class SQuADTransform:
             else:
                 tok_end_position = len(all_doc_tokens) - 1
             (tok_start_position,
-             tok_end_position) = _improve_answer_span(all_doc_tokens, tok_start_position,
-                                                      tok_end_position, self.tokenizer,
-                                                      example.orig_answer_text)
+            tok_end_position) = _improve_answer_span(all_doc_tokens, tok_start_position,
+                                                    tok_end_position, self.tokenizer,
+                                                    example.orig_answer_text)
 
         # The -3 accounts for [CLS], [SEP] and [SEP]
         max_tokens_for_doc = self.max_seq_length - len(query_tokens) - 3
@@ -318,20 +318,7 @@ class SQuADTransform:
             token_is_max_context = {}
             segment_ids = []
 
-            # p_mask: mask with 1 for token than cannot be in the answer
-            # Original TF implem also keep the classification token (set to 0) (not sure why...)
             p_mask = []
-
-            # Query
-            for token in query_tokens:
-                tokens.append(token)
-                segment_ids.append(0)
-                p_mask.append(1)
-
-            #SEP token
-            tokens.append(self.vocab.sep_token)
-            segment_ids.append(0)
-            p_mask.append(1)
 
             # Paragraph
             for i in range(doc_span.length):
@@ -341,17 +328,29 @@ class SQuADTransform:
                 is_max_context = _check_is_max_context(doc_spans, doc_span_index, split_token_index)
                 token_is_max_context[len(tokens)] = is_max_context
                 tokens.append(all_doc_tokens[split_token_index])
-                segment_ids.append(1)
+                segment_ids.append(0)
                 p_mask.append(0)
 
             paragraph_len = doc_span.length
 
             # add [SEP] and [CLS] to the end. The origin implem adds to start.
             tokens.append(self.vocab.sep_token)
+            segment_ids.append(0)
+            p_mask.append(1)
+
+            # Query
+            for token in query_tokens:
+                tokens.append(token)
+                segment_ids.append(0)
+                p_mask.append(1)
+
+            # SEP token
+            tokens.append(self.vocab.sep_token)
             segment_ids.append(1)
             p_mask.append(1)
+
             tokens.append(self.vocab.cls_token)
-            segment_ids.append(1)
+            segment_ids.append(2)
             p_mask.append(0)
 
             if self.do_lookup:
@@ -367,11 +366,10 @@ class SQuADTransform:
             if self.is_pad:
                 padding_length = self.max_seq_length - valid_length
                 input_ids = [padding] * padding_length + input_ids
-                segment_ids = [1] * padding_length + segment_ids
+                segment_ids = [3] * padding_length + segment_ids
                 p_mask = [1] * padding_length + p_mask
                 assert len(input_ids) == self.max_seq_length
                 assert len(segment_ids) == self.max_seq_length
-
             cls_index = len(input_ids) - 1
             span_is_impossible = example.is_impossible
             start_position = None
@@ -390,25 +388,38 @@ class SQuADTransform:
                     span_is_impossible = True
                 else:
                     #padding to the left
-                    doc_offset = padding_length + len(query_tokens) + 1
+                    doc_offset = padding_length
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
+
 
             if self.is_training and span_is_impossible:
                 start_position = cls_index
                 end_position = cls_index
 
+
+            if example.example_id < 10:
+                print("*** Example ***")
+                print("example_index: %s" % (example.example_id))
+                print("example_qas: %s" % (example.qas_id))
+                print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+                print("input_mask: %s" % " ".join([str(x) for x in p_mask]))
+                print("token_is_max_context: %s" % " ".join([
+                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
+                ]))
+                print("orig start position: ", start_position - padding_length)
+                print("orig end position: ", end_position - padding_length)
             features.append(
                 SQuADFeature(example_id=example.example_id, qas_id=example.qas_id,
-                             doc_tokens=example.doc_tokens, doc_span_index=doc_span_index,
-                             tokens=tokens, token_to_orig_map=token_to_orig_map,
-                             token_is_max_context=token_is_max_context, input_ids=input_ids,
-                             cls_index=cls_index, p_mask=p_mask, paragraph_len=paragraph_len,
-                             valid_length=valid_length, segment_ids=segment_ids,
-                             start_position=start_position, end_position=end_position,
-                             is_impossible=span_is_impossible))
+                            doc_tokens=example.doc_tokens, doc_span_index=doc_span_index,
+                            tokens=tokens, token_to_orig_map=token_to_orig_map,
+                            token_is_max_context=token_is_max_context, input_ids=input_ids,
+                            cls_index=cls_index, p_mask=p_mask, paragraph_len=paragraph_len,
+                            valid_length=valid_length, segment_ids=segment_ids,
+                            start_position=start_position, end_position=end_position,
+                            is_impossible=span_is_impossible))
         return features
-
+        
     def __call__(self, record, evaluate=False):
         examples = self._transform(*record)
         if not examples:
