@@ -179,7 +179,8 @@ class XLNetForQA(Block):
             cls_loss = None
             total_loss = [span_loss]
             if self.version2:
-                start_log_probs = mx.nd.softmax(start_logits, axis=-1)
+                start_logits_for_cls[:,-1] = -1e-30
+                start_log_probs = mx.nd.softmax(start_logits_for_cls, axis=-1)
                 start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
                                                transpose_a=True).squeeze(-1)
                 # start_states = mx.nd.gather_nd(
@@ -221,6 +222,9 @@ class XLNetForQA(Block):
                 ret_typ='both')  # shape (bsz, end_n_top, start_n_top)
             end_top_log_probs = end_top_log_probs.reshape((-1, self.start_top_n * self.end_top_n))
             end_top_index = end_top_index.reshape((-1, self.start_top_n * self.end_top_n))
+
+            start_logits_for_cls[:,-1] = -1e-30
+            start_log_probs = mx.nd.softmax(start_logits_for_cls, axis=-1)
             start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
                                            transpose_a=True).squeeze(-1)
 

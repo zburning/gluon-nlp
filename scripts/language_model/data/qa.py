@@ -397,18 +397,6 @@ class SQuADTransform:
                 start_position = cls_index
                 end_position = cls_index
 
-
-            if example.example_id < 10:
-                print("*** Example ***")
-                print("example_index: %s" % (example.example_id))
-                print("example_qas: %s" % (example.qas_id))
-                print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-                print("input_mask: %s" % " ".join([str(x) for x in p_mask]))
-                print("token_is_max_context: %s" % " ".join([
-                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
-                ]))
-                print("orig start position: ", start_position - padding_length)
-                print("orig end position: ", end_position - padding_length)
             features.append(
                 SQuADFeature(example_id=example.example_id, qas_id=example.qas_id,
                             doc_tokens=example.doc_tokens, doc_span_index=doc_span_index,
@@ -419,7 +407,7 @@ class SQuADTransform:
                             start_position=start_position, end_position=end_position,
                             is_impossible=span_is_impossible))
         return features
-        
+
     def __call__(self, record, evaluate=False):
         examples = self._transform(*record)
         if not examples:
