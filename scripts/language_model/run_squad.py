@@ -364,11 +364,12 @@ def train():
                 trainer.allreduce_grads()
                 nlp.utils.clip_grad_global_norm(params, 1)
                 trainer.update(1, ignore_stale_grad=True)
-            
-            step_loss_sep_tmp = np.array([[span_ls.mean().asscalar(), cls_ls.mean().asscalar()] for span_ls, cls_ls in batch_loss_sep])
-            step_loss_sep_tmp = list(np.sum(step_loss_sep_tmp, axis=0))
-            step_loss_span += step_loss_sep_tmp[0]
-            step_loss_cls += step_loss_sep_tmp[1]
+            if args.version_2:
+                step_loss_sep_tmp = np.array([[span_ls.mean().asscalar(), cls_ls.mean().asscalar()] for span_ls, cls_ls in batch_loss_sep])
+                step_loss_sep_tmp = list(np.sum(step_loss_sep_tmp, axis=0))
+                step_loss_span += step_loss_sep_tmp[0]
+                step_loss_cls += step_loss_sep_tmp[1]
+
             step_loss += sum([ls.asscalar() for ls in batch_loss])
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()
@@ -382,10 +383,13 @@ def train():
                     trainer.learning_rate,
                     toc - tic,
                     log_num / (toc - tic))
-                if args.accumulate:
-                    step_loss_span = step_loss_span / args.accumulate
-                    step_loss_cls = step_loss_cls / args.accumulate
-                log.info('span_loss: %.4f, cls_loss: %.4f', step_loss_span / log_interval, step_loss_cls / log_interval)
+
+                if args.version_2:
+                    if args.accumulate:
+                        step_loss_span = step_loss_span / args.accumulate
+                        step_loss_cls = step_loss_cls / args.accumulate
+                    log.info('span_loss: %.4f, cls_loss: %.4f', step_loss_span / log_interval, step_loss_cls / log_interval)
+                    
                 tic = time.time()
                 step_loss = 0.0
                 step_loss_span = 0
