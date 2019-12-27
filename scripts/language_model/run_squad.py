@@ -138,7 +138,7 @@ mx.random.seed(args.seed)
 if not os.path.exists(args.output_dir):
     os.mkdir(args.output_dir)
 
-fh = logging.FileHandler(os.path.join(args.output_dir, 'finetune_squad.log'), mode='w')
+fh = logging.FileHandler(os.path.join(args.output_dir, 'finetune_squad.log'))
 fh.setLevel(logging.INFO)
 fh.setFormatter(formatter)
 console = logging.StreamHandler()
@@ -389,7 +389,7 @@ def train():
                         step_loss_span = step_loss_span / args.accumulate
                         step_loss_cls = step_loss_cls / args.accumulate
                     log.info('span_loss: %.4f, cls_loss: %.4f', step_loss_span / log_interval, step_loss_cls / log_interval)
-                    
+
                 tic = time.time()
                 step_loss = 0.0
                 step_loss_span = 0
