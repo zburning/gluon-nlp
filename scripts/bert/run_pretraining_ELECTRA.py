@@ -138,6 +138,8 @@ parser.add_argument('--gpus', type=str, default=None,
                     help='List of gpus to run when device or dist_sync_device is used for '
                          'communication, e.g. 0 or 0,2,5. empty means using cpu.')
 
+parser.add_argument('--optimizer', type=str, default='lamb')
+
 parser.add_argument('--lamb', type=float, default=50, help='the weight of the loss on discriminator')
 args = parser.parse_args()
 
@@ -244,9 +246,9 @@ def train(data_train, data_eval, model):
 
     # backend specific implementation
     if backend == 'horovod':
-        trainer = hvd.DistributedTrainer(param_dict, 'lamb', optim_params)
+        trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
     else:
-        trainer = mx.gluon.Trainer(param_dict, 'lamb', optim_params,
+        trainer = mx.gluon.Trainer(param_dict, args.optimizer, optim_params,
                                    update_on_kvstore=False)
 
     fp16_trainer = FP16Trainer(trainer, dynamic_loss_scale=dynamic_loss_scale,
