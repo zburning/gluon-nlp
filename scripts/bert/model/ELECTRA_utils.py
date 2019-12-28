@@ -182,11 +182,10 @@ class ELECTRA(mx.gluon.Block):
         gen_output, decoded_full, decoded_masked = self._G(inputs, token_types, valid_length, masked_positions)
         #Considering using sampling here?
         F = mx.ndarray
-        print("masked position: ", masked_positions)
         disc_sampled = F.argmax(decoded_full, axis=-1) if not self._sampling \
             else F.random.multinomial(F.softmax(decoded_full), get_prob=False)
+
         disc_sampled = disc_sampled.as_in_context(decoded_full.context)
-        print("disc ctx: ", disc_sampled.context)
         disc_sampled = disc_sampled.detach()
         disc_input = inputs_orig * mp_mask + disc_sampled * (1 - mp_mask)
         disc_label = disc_input.astype('int32').__eq__(inputs_orig)

@@ -172,6 +172,7 @@ class DataParallelBERT(nlp.utils.Parallelizable):
 
             ls = ls1 + args.lamb * ls2
             ls = ls / args.accumulate
+            print("ls1 ctx: {}, ls2 ctx: {}".format(ls1.context, ls2.context))
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -204,7 +205,7 @@ def init_comm(backend):
         rank = store.rank
         local_rank = 0
         is_master_node = rank == local_rank
-        ctxs = [mx.cpu()] if args.gpus is None or args.gpus == '' else \
+        ctxs = [mx.cpu(0), mx.cpu(1), mx.cpu(2)] if args.gpus is None or args.gpus == '' else \
                [mx.gpu(int(x)) for x in args.gpus.split(',')]
     return store, num_workers, rank, local_rank, is_master_node, ctxs
 
@@ -242,7 +243,6 @@ def train(data_train, data_eval, model):
         loss_scale_param = None
 
     # backend specific implementation
-    nlp.optimizer.LAMB
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, 'lamb', optim_params)
     else:
