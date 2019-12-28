@@ -331,10 +331,10 @@ def train(data_train, data_eval, model):
                     mask_label_list.append(masked_id.as_in_context(mx.cpu(0)))
                     mask_pred_list.append(decoded.as_in_context(mx.cpu(0)))
 
-                    mask_weight_list.append(masked_weight)
+                    mask_weight_list.append(masked_weight.as_in_context(mx.cpu(0)))
                     running_mlm_loss += ls1.as_in_context(mx.cpu()) / len(ctxs)
                     running_disc_loss += ls2.as_in_context(mx.cpu()) / len(ctxs)
-                    running_num_tks += valid_length.sum().as_in_context(mx.cpu())
+                    running_num_tks += valid_length.sum().as_in_context(mx.cpu(0))
             # pre fetch next batch
             try:
                 next_data_batch = next(data_train_iter)
