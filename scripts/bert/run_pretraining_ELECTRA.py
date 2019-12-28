@@ -340,6 +340,7 @@ def train(data_train, data_eval, model):
 
             # update
             if (batch_num + 1) % accumulate == 0:
+                print("step!")
                 fp16_trainer.step(1, max_norm=1.0 * num_workers)
             # update metrics
             if args.no_compute_acc:
