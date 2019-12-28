@@ -174,7 +174,6 @@ class DataParallelBERT(nlp.utils.Parallelizable):
 
             ls = ls1 + args.lamb * ls2
             ls = ls / args.accumulate
-            print("ls1 ctx: {}, ls2 ctx: {}".format(ls1.context, ls2.context))
         if self._trainer:
             self._trainer.backward(ls)
         else:
@@ -244,6 +243,8 @@ def train(data_train, data_eval, model):
     else:
         loss_scale_param = None
 
+    nlp.optimizer.lamb
+    nlp.optimizer.bert_adam
     # backend specific implementation
     if backend == 'horovod':
         trainer = hvd.DistributedTrainer(param_dict, args.optimizer, optim_params)
@@ -324,11 +325,11 @@ def train(data_train, data_eval, model):
                     disc_label, classified, masked_id, decoded, \
                     masked_weight, ls1, ls2, valid_length = parallel.get()
                     #print("ls1: {} ls2: {}".format(ls1.asnumpy(), ls2.asnumpy()))
-                    ns_label_list.append(disc_label)
-                    ns_pred_list.append(classified)
+                    ns_label_list.append(disc_label.as_in_context(mx.cpu(0)))
+                    ns_pred_list.append(classified.as_in_context(mx.cpu(0)))
 
-                    mask_label_list.append(masked_id)
-                    mask_pred_list.append(decoded)
+                    mask_label_list.append(masked_id.as_in_context(mx.cpu(0)))
+                    mask_pred_list.append(decoded.as_in_context(mx.cpu(0)))
 
                     mask_weight_list.append(masked_weight)
                     running_mlm_loss += ls1.as_in_context(mx.cpu()) / len(ctxs)
@@ -342,7 +343,6 @@ def train(data_train, data_eval, model):
 
             # update
             if (batch_num + 1) % accumulate == 0:
-                print("step!")
                 fp16_trainer.step(1, max_norm=1.0 * num_workers)
             # update metrics
             if args.no_compute_acc:
