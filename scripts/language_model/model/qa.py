@@ -195,7 +195,7 @@ class XLNetForQA(Block):
             return total_loss, total_loss_sum
         else:
             #inference
-            start_log_probs = mx.nd.softmax(start_logits, axis=-1)  # shape (bsz, slen)
+            start_log_probs = mx.nd.log_softmax(start_logits, axis=-1)  # shape (bsz, slen)
             start_top_log_probs, start_top_index = mx.ndarray.topk(
                 start_log_probs, k=self.start_top_n, axis=-1,
                 ret_typ='both')  # shape (bsz, start_n_top)
@@ -216,7 +216,7 @@ class XLNetForQA(Block):
                 shape=start_states.shape)  # shape (bsz, slen, start_n_top, hsz)
             end_logits = self.end_logits(hidden_states_expanded, start_states=start_states,
                                          p_masks=p_mask)  # shape (bsz, slen, start_n_top)
-            end_log_probs = mx.nd.softmax(end_logits, axis=1)  # shape (bsz, slen, start_n_top)
+            end_log_probs = mx.nd.log_softmax(end_logits, axis=1)  # shape (bsz, slen, start_n_top)
             # Note that end_top_index and end_top_log_probs have shape (bsz, END_N_TOP, start_n_top)
             # So that for each start position, there are end_n_top end positions on the second dim.
             end_top_log_probs, end_top_index = mx.ndarray.topk(
@@ -224,7 +224,9 @@ class XLNetForQA(Block):
                 ret_typ='both')  # shape (bsz, end_n_top, start_n_top)
             end_top_log_probs = end_top_log_probs.reshape((-1, self.start_top_n * self.end_top_n))
             end_top_index = end_top_index.reshape((-1, self.start_top_n * self.end_top_n))
-            start_states = mx.nd.batch_dot(output, start_log_probs.expand_dims(-1),
+
+            start_probs = mx.nd.softmax(start_logits, axis=-1)
+            start_states = mx.nd.batch_dot(output, start_probs.expand_dims(-1),
                                            transpose_a=True).squeeze(-1)
 
             cls_logits = None
