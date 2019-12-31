@@ -15,7 +15,7 @@ import mxnet as mx
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
 from model.qa import XLNetForQA
-from data.qa import SQuADTransform, preprocess_dataset
+from data.new_qa import SQuADTransform, preprocess_dataset
 from transformer import model
 from xlnet_qa_evaluate import predict_extended
 from utils_squad_evaluate import EVAL_OPTS, main as evaluate_on_squad
@@ -485,7 +485,8 @@ def evaluate(prefix='p'):
         example_qas_id = features[0].qas_id
         score_diff, best_non_null_entry, nbest_json = predict_extended(
             features=features, results=results,
-            tokenizer=nlp.data.BERTBasicTokenizer(lower=args.uncased), n_best_size=args.n_best_size,
+            sp_model=nlp.data.SentencepieceTokenizer(tokenizer._sentencepiece_path)._processor,
+            n_best_size=args.n_best_size,
             max_answer_length=args.max_answer_length, start_n_top=args.start_top_n,
             end_n_top=args.end_top_n)
         scores_diff_json[example_qas_id] = score_diff
@@ -515,7 +516,7 @@ def evaluate(prefix='p'):
     else:
         evaluate_options = EVAL_OPTS(data_file=dev_data_path, pred_file=output_prediction_file,
                                      na_prob_file=None, na_prob_thresh=args.null_score_diff_threshold)
-
+    return
     results = evaluate_on_squad(evaluate_options)
     return results
 

@@ -119,8 +119,14 @@ def _get_best_indexes(logits, n_best_size):
         best_indexes.append(index_and_score[i][0])
     return best_indexes
 
+_PrelimPrediction = namedtuple(  # pylint: disable=invalid-name
+    'PrelimPrediction',
+    ['feature_id', 'start_index', 'end_index', 'start_log_prob', 'end_log_prob'])
 
-def predict_extended(features, results, tokenizer, n_best_size, max_answer_length=64, start_n_top=5,
+_NbestPrediction = namedtuple(  # pylint: disable=invalid-name
+    'NbestPrediction', ['text', 'start_log_prob', 'end_log_prob'])
+
+def predict_extended(features, results, sp_model, n_best_size, max_answer_length=64, start_n_top=5,
                      end_n_top=5):
     """Get prediction results for XLNet.
 
@@ -149,29 +155,12 @@ def predict_extended(features, results, tokenizer, n_best_size, max_answer_lengt
         n-best predictions with their probabilities.
     """
 
-    _PrelimPrediction = namedtuple(  # pylint: disable=invalid-name
-        'PrelimPrediction',
-        ['features_id', 'start_index', 'end_index', 'start_log_prob', 'end_log_prob'])
-
-    _NbestPrediction = namedtuple(  # pylint: disable=invalid-name
-        'NbestPrediction', ['text', 'start_log_prob', 'end_log_prob'])
-
     prelim_predictions = []
     score_null = 1000000  # large and positive
-
+    print("results qas: ", features[0].qas_id)
     for features_id, (result, feature) in enumerate(zip(results, features)):
         cur_null_score = result.cls_logits[0]
         score_null = min(score_null, cur_null_score)
-        #print("id: ", feature.qas_id)
-        #print("len: ", len(feature.tokens))
-        #print("feature answer :", feature.orig_answer_text)
-        #print("featture isimpossible: ", feature.is_impossible)
-        #print("start index: ", result.start_top_index)
-        #for i in range(start_n_top):
-        #    print("maybe: ", feature.tokens[int(result.start_top_index[i])])
-        #print("end index: ", result.end_top_index)
-        #print("start log: ", result.start_top_log_probs)
-        #print("end log: " ,result.end_top_log_probs)
         for i in range(start_n_top):
             for j in range(end_n_top):
                 start_log_prob = result.start_top_log_probs[i]
@@ -182,24 +171,24 @@ def predict_extended(features, results, tokenizer, n_best_size, max_answer_lengt
                 # We could hypothetically create invalid predictions, e.g., predict
                 # that the start of the span is in the question. We throw out all
                 # invalid predictions.
-                if start_index >= len(feature.tokens):
+                if start_index >= feature.paragraph_len - 1:
                     continue
-                if end_index >= len(feature.tokens):
+                if end_index >= feature.paragraph_len - 1:
                     continue
-                if start_index not in feature.token_to_orig_map.keys():
-                    continue
-                if end_index not in feature.token_to_orig_map.keys():
-                    continue
+
                 if not feature.token_is_max_context.get(start_index, False):
                     continue
                 if end_index < start_index:
                     continue
                 length = end_index - start_index + 1
+                pieces = [sp_model.IdToPiece(token) for token in
+                          feature.tokens[start_index: (end_index + 1)]]
+                answer_text = sp_model.DecodePieces(pieces)
+                print("st: {0}, ed: {1}, answer: {2}".format(start_log_prob, end_log_prob, answer_text))
                 if length > max_answer_length:
                     continue
-                #print("st: {0}, ed: {1}".format(start_index, end_index))
                 prelim_predictions.append(
-                    _PrelimPrediction(features_id=features_id, start_index=start_index,
+                    _PrelimPrediction(feature_id=features_id, start_index=start_index,
                                       end_index=end_index, start_log_prob=start_log_prob,
                                       end_log_prob=end_log_prob))
 
@@ -211,27 +200,17 @@ def predict_extended(features, results, tokenizer, n_best_size, max_answer_lengt
     for pred in prelim_predictions:
         if len(nbest) >= n_best_size:
             break
-        feature = features[pred.features_id]
         if pred.start_index > 0:  # this is a non-null prediction
-            tok_tokens = feature.tokens[pred.start_index:(pred.end_index + 1)]
-            orig_doc_start = feature.token_to_orig_map[pred.start_index]
-            orig_doc_end = feature.token_to_orig_map[pred.end_index]
-            orig_tokens = feature.doc_tokens[orig_doc_start:(orig_doc_end + 1)]
-            tok_text = ' '.join(tok_tokens)
-            # De-tokenize WordPieces that have been split off.
-            tok_text = tok_text.replace(' ##', '')
-            tok_text = tok_text.replace('##', '')
+            feature = features[pred.feature_id]
+            tok_start_to_orig_index = feature.tok_start_to_orig_index
+            tok_end_to_orig_index = feature.tok_end_to_orig_index
+            start_orig_pos = tok_start_to_orig_index[pred.start_index]
+            end_orig_pos = tok_end_to_orig_index[pred.end_index]
 
-            # Clean whitespace
-            tok_text = tok_text.strip()
-            tok_text = ' '.join(tok_text.split())
-            orig_text = ' '.join(orig_tokens)
-            #print("tok_text: ", tok_text)
-            #print("orig text: ", orig_text)
-            final_text = get_final_text(tok_text, orig_text, tokenizer)
+            paragraph_text = feature.paragraph_text
+            final_text = paragraph_text[start_orig_pos: end_orig_pos + 1].strip()
             if final_text in seen_predictions:
                 continue
-
             seen_predictions[final_text] = True
         else:
             final_text = ''
@@ -254,6 +233,8 @@ def predict_extended(features, results, tokenizer, n_best_size, max_answer_lengt
         total_scores.append(entry.start_log_prob + entry.end_log_prob)
         if not best_non_null_entry:
             best_non_null_entry = entry
+    print("best: ", best_non_null_entry)
+    print("--------------------------")
     probs = nd.softmax(nd.array(total_scores)).asnumpy()
 
     nbest_json = []
