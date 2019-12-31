@@ -514,6 +514,7 @@ class SQuADTransform:
             valid_length = len(input_ids)
 
             # Zero-pad up to the sequence length.
+            padding_length = 0
             while len(input_ids) < self.max_seq_length:
                 padding_length = self.max_seq_length - valid_length
                 input_ids = [0] * padding_length + input_ids
@@ -553,7 +554,7 @@ class SQuADTransform:
                 start_position = cls_index
                 end_position = cls_index
 
-            if example.example_id %10 == 0:
+            if example.example_id %1000 == 0:
                 print("*** Example ***")
                 print("qas_id: %s" % (example.qas_id))
                 print("example_index: %s" % (example.example_id))
