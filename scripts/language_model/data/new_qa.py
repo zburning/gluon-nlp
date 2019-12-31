@@ -557,31 +557,31 @@ class SQuADTransform:
                 print("*** Example ***")
                 print("qas_id: %s" % (example.qas_id))
                 print("example_index: %s" % (example.example_id))
-                print("doc_span_index: %s" % (doc_span_index))
-                print("tok_start_to_orig_index: %s" % " ".join(
-                    [str(x) for x in cur_tok_start_to_orig_index]))
-                print("tok_end_to_orig_index: %s" % " ".join(
-                    [str(x) for x in cur_tok_end_to_orig_index]))
-                print("token_is_max_context: %s" % " ".join([
-                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
-                ]))
-                print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-                print(
-                    "p_mask: %s" % " ".join([str(x) for x in p_mask]))
-                print(
-                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+                # print("doc_span_index: %s" % (doc_span_index))
+                # print("tok_start_to_orig_index: %s" % " ".join(
+                #     [str(x) for x in cur_tok_start_to_orig_index]))
+                # print("tok_end_to_orig_index: %s" % " ".join(
+                #     [str(x) for x in cur_tok_end_to_orig_index]))
+                # print("token_is_max_context: %s" % " ".join([
+                #     "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
+                # ]))
+                # print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+                # print(
+                #     "p_mask: %s" % " ".join([str(x) for x in p_mask]))
+                # print(
+                #     "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
 
-                if self.is_training and span_is_impossible:
-                   print("impossible example span")
+                # if self.is_training and span_is_impossible:
+                #    print("impossible example span")
 
-                if self.is_training and not span_is_impossible:
-                    pieces = [sp_model.IdToPiece(token) for token in
-                              tokens[start_position: (end_position + 1)]]
-                    answer_text = sp_model.DecodePieces(pieces)
-                    print("start_position: %d" % (start_position))
-                    print("end_position: %d" % (end_position))
-                    print(
-                        "answer: %s" % (answer_text))
+                # if self.is_training and not span_is_impossible:
+                #     pieces = [sp_model.IdToPiece(token) for token in
+                #               tokens[start_position: (end_position + 1)]]
+                #     answer_text = sp_model.DecodePieces(pieces)
+                #     print("start_position: %d" % (start_position))
+                #     print("end_position: %d" % (end_position))
+                #     print(
+                #         "answer: %s" % (answer_text))
 
                     # note(zhiliny): With multi processing,
                     # the example_index is actually the index within the current process
