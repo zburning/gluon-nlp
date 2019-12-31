@@ -127,6 +127,9 @@ parser.add_argument('--end_top_n', type=int, default=5, help='to be added')
 parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 parser.add_argument('--training_steps', type=int, help='training steps')
+parser.add_argument('--raw', action='store_true', help='if do data preprocessing or load from pickled file')
+parser.add_argument('--dev_dataset_file', default='./output_dir/out.train', type=str, help='location of dev dataset')
+parser.add_argument('--train_dataset_file', default='./output_dir/out.dev', type=str, help='location of train dataset')
 
 args = parser.parse_args()
 
@@ -251,15 +254,18 @@ def train():
     else:
         train_data = SQuAD(segment, version='1.1')
     if args.debug:
-        sampled_data = [train_data[i] for i in range(1000)]
+        sampled_data = [train_data[i] for i in range(100)]
         train_data = mx.gluon.data.SimpleDataset(sampled_data)
     log.info('Number of records in Train data: %s', len(train_data))
+    if args.raw:
+        train_data_transform = preprocess_dataset(
+            train_data,
+            SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
+                           doc_stride=args.doc_stride, max_query_length=args.max_query_length,
+                           is_pad=True, is_training=True), dataset_file=args.train_dataset_file)
+    else:
+        train_data_transform = preprocess_dataset(raw=False, dataset_file=args.train_dataset_file)
 
-    train_data_transform, _ = preprocess_dataset(
-        train_data,
-        SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
-                       doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                       is_pad=True, is_training=True))
     log.info('The number of examples after preprocessing: %s', len(train_data_transform))
 
     train_dataloader = mx.gluon.data.DataLoader(train_data_transform, batchify_fn=batchify_fn,
@@ -430,16 +436,22 @@ def evaluate(prefix='p'):
         dev_data = mx.gluon.data.SimpleDataset(sampled_data)
     log.info('Number of records in dev data: %d', len(dev_data))
 
+
     dev_dataset = dev_data.transform(
         SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
                        doc_stride=args.doc_stride, max_query_length=args.max_query_length,
                        is_pad=True, is_training=False)._transform, lazy=False)
 
-    dev_data_transform, _ = preprocess_dataset(
-        dev_data,
-        SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
-                       doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                       is_pad=True, is_training=False))
+    print(args.raw)
+    if args.raw:
+        dev_data_transform = preprocess_dataset(
+            dev_data,
+            SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
+                           doc_stride=args.doc_stride, max_query_length=args.max_query_length,
+                           is_pad=True, is_training=False), dataset_file=args.dev_dataset_file)
+    else:
+        dev_data_transform = preprocess_dataset(raw=False, dataset_file=args.dev_dataset_file)
+
     log.info('The number of examples after preprocessing: %d', len(dev_data_transform))
 
     dev_dataloader = mx.gluon.data.DataLoader(dev_data_transform, batchify_fn=batchify_fn,
@@ -516,7 +528,7 @@ def evaluate(prefix='p'):
     else:
         evaluate_options = EVAL_OPTS(data_file=dev_data_path, pred_file=output_prediction_file,
                                      na_prob_file=None, na_prob_thresh=args.null_score_diff_threshold)
-    return
+
     results = evaluate_on_squad(evaluate_options)
     return results
 

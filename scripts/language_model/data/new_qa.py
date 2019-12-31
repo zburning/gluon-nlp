@@ -16,7 +16,7 @@ import collections
 import multiprocessing as mp
 import time
 from functools import partial
-
+import pickle
 from mxnet.gluon.data import SimpleDataset
 from gluonnlp.data.utils import whitespace_splitter
 import unicodedata
@@ -48,7 +48,7 @@ def _worker_fn(example, transform):
     return feature
 
 
-def preprocess_dataset(dataset, transform, num_workers=8):
+def preprocess_dataset(dataset=None, transform=None, num_workers=8, raw=True, dataset_file=None):
     """Use multiprocessing to perform transform for dataset.
 
     Parameters
@@ -66,19 +66,24 @@ def preprocess_dataset(dataset, transform, num_workers=8):
 
     pool = mp.Pool(num_workers)
     dataset_transform = []
-    dataset_len = []
-    for data in pool.map(worker_fn, dataset):
-        if data:
-            for _data in data:
-                dataset_transform.append(_data[:-1])
-                dataset_len.append(_data[-1])
+    if raw:
+        for data in pool.map(worker_fn, dataset):
+            if data:
+                for _data in data:
+                    dataset_transform.append(_data[:-1])
+        with open(dataset_file, 'wb') as fp:
+            pickle.dump(dataset_transform, fp)
+    else:
+        print("load from {}".format(dataset_file))
+        with open(dataset_file, 'rb') as file:
+            dataset_transform = pickle.load(file)
 
     dataset = SimpleDataset(dataset_transform).transform(
         lambda x: (x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]))
     end = time.time()
     pool.close()
     print('Done! Transform dataset costs %.2f seconds.' % (end - start))
-    return dataset, dataset_len
+    return dataset
 
 def _encode_pieces(sp_model, text, sample=False):
 
@@ -86,6 +91,7 @@ def _encode_pieces(sp_model, text, sample=False):
         pieces = sp_model.EncodeAsPieces(text)
     else:
         pieces = sp_model.SampleEncodeAsPieces(text, 64, 0.1)
+
     new_pieces = []
     for piece in pieces:
         if len(piece) > 1 and piece[-1] == ',' and piece[-2].isdigit():
@@ -513,8 +519,8 @@ class SQuADTransform:
             # tokens are attended to.
             valid_length = len(input_ids)
 
-            # Zero-pad up to the sequence length.
             padding_length = 0
+            # Zero-pad up to the sequence length.
             while len(input_ids) < self.max_seq_length:
                 padding_length = self.max_seq_length - valid_length
                 input_ids = [0] * padding_length + input_ids
@@ -554,35 +560,35 @@ class SQuADTransform:
                 start_position = cls_index
                 end_position = cls_index
 
-            if example.example_id %1000 == 0:
+            if example.example_id < 20:
                 print("*** Example ***")
                 print("qas_id: %s" % (example.qas_id))
                 print("example_index: %s" % (example.example_id))
-                # print("doc_span_index: %s" % (doc_span_index))
-                # print("tok_start_to_orig_index: %s" % " ".join(
-                #     [str(x) for x in cur_tok_start_to_orig_index]))
-                # print("tok_end_to_orig_index: %s" % " ".join(
-                #     [str(x) for x in cur_tok_end_to_orig_index]))
-                # print("token_is_max_context: %s" % " ".join([
-                #     "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
-                # ]))
-                # print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-                # print(
-                #     "p_mask: %s" % " ".join([str(x) for x in p_mask]))
-                # print(
-                #     "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+                print("doc_span_index: %s" % (doc_span_index))
+                print("tok_start_to_orig_index: %s" % " ".join(
+                    [str(x) for x in cur_tok_start_to_orig_index]))
+                print("tok_end_to_orig_index: %s" % " ".join(
+                    [str(x) for x in cur_tok_end_to_orig_index]))
+                print("token_is_max_context: %s" % " ".join([
+                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
+                ]))
+                print("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+                print(
+                    "p_mask: %s" % " ".join([str(x) for x in p_mask]))
+                print(
+                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
 
-                # if self.is_training and span_is_impossible:
-                #    print("impossible example span")
+                if self.is_training and span_is_impossible:
+                   print("impossible example span")
 
-                # if self.is_training and not span_is_impossible:
-                #     pieces = [sp_model.IdToPiece(token) for token in
-                #               tokens[start_position: (end_position + 1)]]
-                #     answer_text = sp_model.DecodePieces(pieces)
-                #     print("start_position: %d" % (start_position))
-                #     print("end_position: %d" % (end_position))
-                #     print(
-                #         "answer: %s" % (answer_text))
+                if self.is_training and not span_is_impossible:
+                    pieces = [sp_model.IdToPiece(token) for token in
+                              tokens[start_position: (end_position + 1)]]
+                    answer_text = sp_model.DecodePieces(pieces)
+                    print("start_position: %d" % (start_position))
+                    print("end_position: %d" % (end_position))
+                    print(
+                        "answer: %s" % (answer_text))
 
                     # note(zhiliny): With multi processing,
                     # the example_index is actually the index within the current process
