@@ -86,8 +86,6 @@ def _encode_pieces(sp_model, text, sample=False):
         pieces = sp_model.EncodeAsPieces(text)
     else:
         pieces = sp_model.SampleEncodeAsPieces(text, 64, 0.1)
-
-    print("pieces: ", pieces)
     new_pieces = []
     for piece in pieces:
         if len(piece) > 1 and piece[-1] == ',' and piece[-2].isdigit():
