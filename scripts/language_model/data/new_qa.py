@@ -553,7 +553,7 @@ class SQuADTransform:
                 start_position = cls_index
                 end_position = cls_index
 
-            if example.example_id < 20:
+            if example.example_id %10 == 0:
                 print("*** Example ***")
                 print("qas_id: %s" % (example.qas_id))
                 print("example_index: %s" % (example.example_id))
