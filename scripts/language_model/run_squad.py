@@ -16,7 +16,7 @@ import mxnet as mx
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
 from model.qa import XLNetForQA
-from data.new_qa import SQuADTransform, preprocess_dataset
+from data.new_qa import SQuADTransform, preprocess_dataset, convert_examples_to_inputs
 from transformer import model
 from xlnet_qa_evaluate import predict_extended
 from utils_squad_evaluate import EVAL_OPTS, main as evaluate_on_squad
