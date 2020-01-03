@@ -72,6 +72,7 @@ def preprocess_dataset(dataset=None, transform=None, num_workers=8, raw=True, da
                 for _data in data:
                     dataset_transform.append(_data[:-1])
         with open(dataset_file, 'wb') as fp:
+            print("write features to {}".format(dataset_file))
             pickle.dump(dataset_transform, fp)
     else:
         print("load from {}".format(dataset_file))
