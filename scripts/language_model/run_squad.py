@@ -59,13 +59,13 @@ parser.add_argument('--test_batch_size', type=int, default=24,
                     help='Test batch size. default is 24')
 
 parser.add_argument('--optimizer', type=str, default='bertadam',
-                    help='optimization algorithm. default is bertadam(mxnet >= 1.5.0.)')
+                    help='optimization algorithm. default is bertadam')
 
 parser.add_argument(
     '--accumulate', type=int, default=None, help='The number of batches for '
     'gradients accumulation to simulate large batch size. Default is None')
 
-parser.add_argument('--lr', type=float, default=5e-5, help='Initial learning rate. default is 5e-5')
+parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate. default is 5e-5')
 
 parser.add_argument(
     '--warmup_ratio', type=float, default=0,
@@ -75,10 +75,10 @@ parser.add_argument(
 parser.add_argument('--log_interval', type=int, default=10, help='report interval. default is 10')
 
 parser.add_argument(
-    '--max_seq_length', type=int, default=384,
+    '--max_seq_length', type=int, default=512,
     help='The maximum total input sequence length after WordPiece tokenization.'
     'Sequences longer than this will be truncated, and sequences shorter '
-    'than this will be padded. default is 384')
+    'than this will be padded. default is 512')
 
 parser.add_argument(
     '--doc_stride', type=int, default=128,
@@ -121,6 +121,7 @@ parser.add_argument('--pretrained_xlnet_parameters', type=str, default=None,
                     help='Pre-trained bert model parameter file. default is None')
 
 parser.add_argument('--layerwise_decay', type=float, default=0.75, help='Layer-wise lr decay')
+parser.add_argument('--wd', type=float, default=0.01, help='adam weight decay')
 parser.add_argument('--seed', type=int, default=29, help='Random seed')
 parser.add_argument('--start_top_n', type=int, default=5, help='to be added')
 parser.add_argument('--end_top_n', type=int, default=5, help='to be added')
@@ -272,9 +273,7 @@ def train():
                                                 batch_size=args.batch_size, num_workers=4,
                                                 shuffle=True)
 
-    log.info('Start Training')
-
-    optimizer_params = {'learning_rate': args.lr}
+    optimizer_params = {'learning_rate': args.lr, 'wd': args.wd}
     try:
         trainer = mx.gluon.Trainer(net.collect_params(), args.optimizer, optimizer_params,
                                    update_on_kvstore=False)
