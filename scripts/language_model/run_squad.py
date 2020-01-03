@@ -439,15 +439,14 @@ def evaluate(prefix='p'):
     dev_dataset = dev_data.transform(
         SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
                        doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                       is_pad=True, is_training=False)._transform, lazy=False)
+                       is_pad=True, is_training=True)._transform, lazy=False)
 
-    print(args.raw)
     if args.raw:
         dev_data_transform = preprocess_dataset(
             dev_data,
             SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
                            doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                           is_pad=True, is_training=False), dataset_file=args.dev_dataset_file)
+                           is_pad=True, is_training=True), dataset_file=args.dev_dataset_file)
     else:
         dev_data_transform = preprocess_dataset(raw=False, dataset_file=args.dev_dataset_file)
 
