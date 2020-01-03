@@ -128,8 +128,8 @@ parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 parser.add_argument('--training_steps', type=int, help='training steps')
 parser.add_argument('--raw', action='store_true', help='if do data preprocessing or load from pickled file')
-parser.add_argument('--dev_dataset_file', default='./output_dir/out.train', type=str, help='location of dev dataset')
-parser.add_argument('--train_dataset_file', default='./output_dir/out.dev', type=str, help='location of train dataset')
+parser.add_argument('--dev_dataset_file', default='./output_dir/out.dev', type=str, help='location of dev dataset')
+parser.add_argument('--train_dataset_file', default='./output_dir/out.train', type=str, help='location of train dataset')
 
 args = parser.parse_args()
 
