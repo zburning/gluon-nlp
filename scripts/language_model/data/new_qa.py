@@ -86,6 +86,37 @@ def preprocess_dataset(dataset=None, transform=None, num_workers=8, raw=True, da
     print('Done! Transform dataset costs %.2f seconds.' % (end - start))
     return dataset
 
+def convert_single_example_to_input(example):
+    features = []
+    for _example in example:
+        feature = []
+        feature.append(_example.example_id)
+        feature.append(_example.input_ids)
+        feature.append(_example.segment_ids)
+        feature.append(_example.valid_length)
+        feature.append(_example.p_mask)
+        feature.append(_example.start_position)
+        feature.append(_example.end_position)
+        feature.append(_example.is_impossible)
+        feature.append(len(_example.input_ids))
+        features.append(feature)
+    return features
+
+
+def convert_examples_to_inputs(examples, num_workers=8):
+    pool = mp.Pool(num_workers)
+    dataset_transform = []
+    for data in pool.map(convert_single_example_to_input, examples):
+        if data:
+            for _data in data:
+                dataset_transform.append(_data[:-1])
+    dataset = SimpleDataset(dataset_transform).transform(
+        lambda x: (x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]))
+
+    pool.close()
+    return dataset
+
+    
 def _encode_pieces(sp_model, text, sample=False):
 
     if not sample:

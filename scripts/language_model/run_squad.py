@@ -10,6 +10,7 @@ import warnings
 import copy
 import json
 import collections
+import pickle
 import numpy as np
 import mxnet as mx
 import gluonnlp as nlp
@@ -436,19 +437,19 @@ def evaluate(prefix='p'):
     log.info('Number of records in dev data: %d', len(dev_data))
 
 
-    dev_dataset = dev_data.transform(
-        SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
-                       doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                       is_pad=True, is_training=True)._transform, lazy=False)
-
     if args.raw:
-        dev_data_transform = preprocess_dataset(
-            dev_data,
+        dev_dataset = dev_data.transform(
             SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
                            doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                           is_pad=True, is_training=True), dataset_file=args.dev_dataset_file)
+                           is_pad=True, is_training=False)._transform, lazy=False)
+        with open(args.dev_dataset_file, 'wb') as file:
+            pickle.dump(list(dev_dataset), file)
     else:
-        dev_data_transform = preprocess_dataset(raw=False, dataset_file=args.dev_dataset_file)
+        with open(args.dev_dataset_file , 'rb') as file:
+            dev_dataset = pickle.load(file)
+            dev_dataset = mx.gluon.data.SimpleDataset(dev_dataset)
+
+    dev_data_transform = convert_examples_to_inputs(dev_dataset)
 
     log.info('The number of examples after preprocessing: %d', len(dev_data_transform))
 
