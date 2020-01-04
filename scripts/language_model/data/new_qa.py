@@ -72,7 +72,6 @@ def preprocess_dataset(dataset=None, transform=None, num_workers=8, raw=True, da
                 for _data in data:
                     dataset_transform.append(_data[:-1])
         with open(dataset_file, 'wb') as fp:
-            print("write features to {}".format(dataset_file))
             pickle.dump(dataset_transform, fp)
     else:
         print("load from {}".format(dataset_file))
@@ -85,6 +84,7 @@ def preprocess_dataset(dataset=None, transform=None, num_workers=8, raw=True, da
     pool.close()
     print('Done! Transform dataset costs %.2f seconds.' % (end - start))
     return dataset
+
 
 def convert_single_example_to_input(example):
     features = []
@@ -116,7 +116,6 @@ def convert_examples_to_inputs(examples, num_workers=8):
     pool.close()
     return dataset
 
-    
 def _encode_pieces(sp_model, text, sample=False):
 
     if not sample:
@@ -497,7 +496,7 @@ class SQuADTransform:
             if start_offset + length == len(all_doc_tokens):
                 break
             start_offset += min(length, self.doc_stride)
-
+        #print("qas id: {}, tokens: {}, max tokens for doc: {} doc_spans: {}".format(example.qas_id, len(all_doc_tokens), max_tokens_for_doc, len(doc_spans)))
         for (doc_span_index, doc_span) in enumerate(doc_spans):
             tokens = []
             token_is_max_context = {}
@@ -550,16 +549,14 @@ class SQuADTransform:
             # The mask has 0 for real tokens and 1 for padding tokens. Only real
             # tokens are attended to.
             valid_length = len(input_ids)
-
-            padding_length = 0
             # Zero-pad up to the sequence length.
+            cls_index = len(input_ids) - 1
             while len(input_ids) < self.max_seq_length:
                 padding_length = self.max_seq_length - valid_length
-                input_ids = [0] * padding_length + input_ids
-                segment_ids = [3] * padding_length + segment_ids
-                p_mask = [1] * padding_length + p_mask
+                input_ids = input_ids + [0] * padding_length
+                segment_ids = segment_ids + [3] * padding_length
+                p_mask = p_mask + [1] * padding_length
 
-            cls_index = len(input_ids) - 1
             assert len(input_ids) == self.max_seq_length
             assert len(segment_ids) == self.max_seq_length
             assert len(p_mask) == self.max_seq_length
@@ -584,7 +581,7 @@ class SQuADTransform:
                 else:
                     # note(zhiliny): we put P before Q, so doc_offset should be zero.
                     # doc_offset = len(query_tokens) + 2
-                    doc_offset = padding_length
+                    doc_offset = 0
                     start_position = tok_start_position - doc_start + doc_offset
                     end_position = tok_end_position - doc_start + doc_offset
 
@@ -615,10 +612,10 @@ class SQuADTransform:
 
                 if self.is_training and not span_is_impossible:
                     pieces = [sp_model.IdToPiece(token) for token in
-                              tokens[start_position: (end_position + 1)]]
+                              tokens[start_position-padding_length: (end_position-padding_length + 1)]]
                     answer_text = sp_model.DecodePieces(pieces)
-                    print("start_position: %d" % (start_position))
-                    print("end_position: %d" % (end_position))
+                    print("start_position: %d" % (start_position-padding_length))
+                    print("end_position: %d" % (end_position-padding_length))
                     print(
                         "answer: %s" % (answer_text))
 
