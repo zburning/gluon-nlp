@@ -16,6 +16,7 @@
 import json
 import math
 import collections
+import logging
 from collections import namedtuple, OrderedDict
 
 from mxnet import nd
@@ -157,7 +158,20 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
 
     prelim_predictions = []
     score_null = 1000000  # large and positive
-    print("results qas: ", features[0].qas_id)
+    log = logging.getLogger('qa_log')
+    log.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(fmt='%(levelname)s:%(name)s:%(asctime)s %(message)s',
+                              datefmt='%H:%M:%S')
+    fh = logging.FileHandler(os.path.join(args.output_dir, 'qa_debug.log'))
+    fh.setLevel(logging.INFO)
+    fh.setFormatter(formatter)
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(formatter)
+    log.addHandler(console)
+    log.addHandler(fh)
+
+    log.info("results qas: {%s}" % features[0].qas_id)
     for features_id, (result, feature) in enumerate(zip(results, features)):
         cur_null_score = result.cls_logits[0]
         score_null = min(score_null, cur_null_score)
@@ -184,7 +198,7 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
                 pieces = [sp_model.IdToPiece(token) for token in
                           feature.tokens[start_index: (end_index + 1)]]
                 answer_text = sp_model.DecodePieces(pieces)
-                print("st: {0}, ed: {1}, answer: {2}".format(start_log_prob, end_log_prob, answer_text))
+                #log.info("st: {%.3f}, ed: {%.3f}, answer: {%s}"%(start_log_prob, end_log_prob, answer_text))
                 if length > max_answer_length:
                     continue
                 prelim_predictions.append(
@@ -200,7 +214,7 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
     for pred in prelim_predictions:
         if len(nbest) >= n_best_size:
             break
-        if pred.start_index > 0:  # this is a non-null prediction
+        if pred.start_index >= 0:  # this is a non-null prediction
             feature = features[pred.feature_id]
             tok_start_to_orig_index = feature.tok_start_to_orig_index
             tok_end_to_orig_index = feature.tok_end_to_orig_index
@@ -233,8 +247,8 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
         total_scores.append(entry.start_log_prob + entry.end_log_prob)
         if not best_non_null_entry:
             best_non_null_entry = entry
-    print("best: ", best_non_null_entry)
-    print("--------------------------")
+    log.info("best: {%s}" % (best_non_null_entry))
+    log.info("--------------------------")
     probs = nd.softmax(nd.array(total_scores)).asnumpy()
 
     nbest_json = []
