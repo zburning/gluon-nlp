@@ -237,7 +237,7 @@ class XLNetForQA(Block):
 
             cls_logits = None
             if self.version2:
-                cls_logits = self.answer_class(output, output.shape[0], start_states)
+                cls_logits = self.answer_class(output, output.shape[0], start_states, valid_length)
 
             start_top_index = start_top_index
             end_top_index = end_top_index
