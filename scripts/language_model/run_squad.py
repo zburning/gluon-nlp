@@ -264,7 +264,8 @@ def train():
             train_data,
             SQuADTransform(copy.copy(tokenizer), vocab, max_seq_length=args.max_seq_length,
                            doc_stride=args.doc_stride, max_query_length=args.max_query_length,
-                           is_pad=True, is_training=True), dataset_file=args.train_dataset_file)
+                           is_pad=True, is_training=True), dataset_file=args.train_dataset_file,
+                           num_workers=32)
     else:
         train_data_transform = preprocess_dataset(raw=False, dataset_file=args.train_dataset_file)
 
