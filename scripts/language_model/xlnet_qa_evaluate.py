@@ -248,7 +248,7 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
         total_scores.append(entry.start_log_prob + entry.end_log_prob)
         if not best_non_null_entry:
             best_non_null_entry = entry
-    log.info("best: {%s}" % (best_non_null_entry))
+    log.info("best: {%s} , start_log_prob: {%.3f}, end_log_prob: {%.3f}" % (best_non_null_entry.final_text, best_non_null_entry.start_log_prob, best_non_null_entry.end_log_prob))
     log.info("--------------------------")
     probs = nd.softmax(nd.array(total_scores)).asnumpy()
 
