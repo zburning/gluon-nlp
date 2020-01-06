@@ -111,15 +111,15 @@ class XLNetForQA(Block):
         See document of `mx.gluon.Block`.
     """
     def __init__(self, xlnet_base, start_top_n=None, end_top_n=None, version_2=False, is_eval=False,
-                 prefix=None, params=None):
+                 units=768, prefix=None, params=None):
         super(XLNetForQA, self).__init__(prefix=prefix, params=params)
         with self.name_scope():
             self.xlnet = xlnet_base
             self.start_top_n = start_top_n
             self.end_top_n = end_top_n
             self.loss = loss.SoftmaxCELoss()
-            self.start_logits = PoolerStartLogits()
-            self.end_logits = PoolerEndLogits(is_eval=is_eval)
+            self.start_logits = PoolerStartLogits(units=units)
+            self.end_logits = PoolerEndLogits(units=units, is_eval=is_eval)
             self.version2 = version_2
             self.eval = is_eval
             if version_2:

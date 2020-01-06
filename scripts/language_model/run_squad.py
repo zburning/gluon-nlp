@@ -206,10 +206,11 @@ if pretrained_xlnet_parameters:
     nlp.utils.load_parameters(xlnet_base, pretrained_xlnet_parameters, ctx=ctx, ignore_extra=True,
                               cast_dtype=True)
 
-net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n,
-                 version_2=args.version_2)
-net_eval = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n,
-                      version_2=args.version_2, is_eval=True, params=net.collect_params())
+net = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n, 
+                 units=xlnet_base._net._units, version_2=args.version_2)
+net_eval = XLNetForQA(xlnet_base=xlnet_base, start_top_n=args.start_top_n, end_top_n=args.end_top_n, 
+                      units=xlnet_base._net._units, version_2=args.version_2,
+                      is_eval=True, params=net.collect_params())
 
 initializer = mx.init.Normal(0.02)
 
