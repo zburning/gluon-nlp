@@ -163,7 +163,7 @@ def predict_extended(features, results, sp_model, n_best_size, max_answer_length
     log.setLevel(logging.DEBUG)
     formatter = logging.Formatter(fmt='%(levelname)s:%(name)s:%(asctime)s %(message)s',
                               datefmt='%H:%M:%S')
-    fh = logging.FileHandler(os.path.join(args.output_dir, 'qa_debug.log'))
+    fh = logging.FileHandler('./output_dir/qa_debug.log')
     fh.setLevel(logging.INFO)
     fh.setFormatter(formatter)
     console = logging.StreamHandler()
