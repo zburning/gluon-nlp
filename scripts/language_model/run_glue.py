@@ -15,6 +15,7 @@ import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
 from model.XLNet_classifier import XLNetClassifier
+from model.adamGN import AdamwithGradientNormalization
 from transformer import model
 
 os.environ['MXNET_USE_FUSION'] = '0'
@@ -106,6 +107,7 @@ parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
 parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
 parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
 parser.add_argument('--training_steps', type=int , help='training steps')
+parser.add_argument('--optimizer', type=str, default='AdamwithGradientNormalization')
 args = parser.parse_args()
 
 
@@ -358,7 +360,7 @@ def train(metric):
 
     all_model_params = model.collect_params()
     optimizer_params = {'learning_rate': args.lr, 'epsilon': args.epsilon, 'wd': 0}
-    trainer = gluon.Trainer(all_model_params, 'adam', optimizer_params, update_on_kvstore=False)
+    trainer = gluon.Trainer(all_model_params, args.optimizer, optimizer_params, update_on_kvstore=False)
 
     step_size = args.batch_size * args.accumulate if args.accumulate else args.batch_size
     num_train_steps = int(num_train_examples / step_size * args.epochs)
