@@ -489,7 +489,7 @@ def evaluate(prefix='p'):
              total_num / (epoch_toc - epoch_tic))
 
     log.info('Get prediction results...')
-
+    sp_model = nlp.data.SentencepieceTokenizer(tokenizer._sentencepiece_path)._processor
     all_predictions = collections.OrderedDict()
     all_nbest_json = collections.OrderedDict()
     scores_diff_json = collections.OrderedDict()
@@ -498,7 +498,7 @@ def evaluate(prefix='p'):
         example_qas_id = features[0].qas_id
         score_diff, best_non_null_entry, nbest_json = predict_extended(
             features=features, results=results,
-            sp_model=nlp.data.SentencepieceTokenizer(tokenizer._sentencepiece_path)._processor,
+            sp_model=sp_model,
             n_best_size=args.n_best_size,
             max_answer_length=args.max_answer_length, start_n_top=args.start_top_n,
             end_n_top=args.end_top_n)
