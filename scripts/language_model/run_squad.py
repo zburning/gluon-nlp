@@ -17,6 +17,7 @@ from gluonnlp.data import SQuAD
 from model.qa import XLNetForQA
 from data.qa import SQuADTransform, preprocess_dataset
 from transformer import model
+from model.adamGN import AdamwithGradientNormalization
 from xlnet_qa_evaluate import predict_extended
 from utils_squad_evaluate import EVAL_OPTS, main as evaluate_on_squad
 
@@ -58,7 +59,7 @@ parser.add_argument('--batch_size', type=int, default=32,
 parser.add_argument('--test_batch_size', type=int, default=24,
                     help='Test batch size. default is 24')
 
-parser.add_argument('--optimizer', type=str, default='bertadam',
+parser.add_argument('--optimizer', type=str, default='AdamwithGradientNormalization',
                     help='optimization algorithm. default is bertadam(mxnet >= 1.5.0.)')
 
 parser.add_argument(
