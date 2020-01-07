@@ -109,7 +109,7 @@ class AdamwithGradientNormalization(Optimizer):
         if self.clip_gradient:
             kwargs['clip_gradient'] = self.clip_gradient
 
-        grad = grad / mx.nd.norm(grad)
+        grad = grad / mx.nd.norm(grad).asscalar()
         if not multi_precision:
             mean, var = state
             adamw_update(weight, grad, mean, var, out=weight,
