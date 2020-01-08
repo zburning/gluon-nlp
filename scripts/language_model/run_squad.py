@@ -498,6 +498,7 @@ def train():
                 step_loss_span += step_loss_sep_tmp[0] / len(ctx)
                 step_loss_cls += step_loss_sep_tmp[1] / len(ctx)
 
+            mx.optimizer.Adam
             step_loss += sum([ls.asscalar() for ls in batch_loss])
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()

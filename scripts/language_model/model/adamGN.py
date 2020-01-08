@@ -22,7 +22,7 @@ import mxnet as mx
 from mxnet.optimizer import Optimizer, register
 from mxnet.ndarray import zeros, NDArray, full
 
-__all__ = ['AdamwithGradientNormalization']
+__all__ = ['AdamwithGradientNormalization', '']
 
 @register
 class AdamwithGradientNormalization(Optimizer):
