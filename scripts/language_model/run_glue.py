@@ -502,11 +502,11 @@ def evaluate(loader_dev, metric, segment):
         data_list = list(split_and_load(seqs, ctxs))
         for splited_data in data_list:
             input_ids, valid_length, segment_ids, label = splited_data
-            label = label.reshape((-1))
             out = model(input_ids, segment_ids, valid_length=valid_length)
+            batch_loss.append(loss_function(out, label).mean() / len(ctxs))
+            label = label.reshape((-1))
             out_list.append(out.as_in_context(mx.cpu(0)))
             label_list.append(label.as_in_context(mx.cpu(0)))
-            batch_loss.append(loss_function(out, label).mean() / len(ctxs))
 
         batch_loss = sum([ls.asscalar() for ls in batch_loss])
         step_loss += batch_loss
