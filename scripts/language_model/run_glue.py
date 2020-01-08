@@ -504,7 +504,8 @@ def evaluate(loader_dev, metric, segment):
             input_ids, valid_length, segment_ids, label = splited_data
             out = model(input_ids, segment_ids, valid_length=valid_length)
             batch_loss.append(loss_function(out, label).mean() / len(ctxs))
-            label = label.reshape((-1))
+            if args.task != 'STS-B':
+                label = label.reshape((-1))
             out_list.append(out.as_in_context(mx.cpu(0)))
             label_list.append(label.as_in_context(mx.cpu(0)))
 
