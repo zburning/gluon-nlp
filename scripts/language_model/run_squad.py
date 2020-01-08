@@ -16,7 +16,6 @@ import mxnet as mx
 import gluonnlp as nlp
 from gluonnlp.data import SQuAD
 from model.qa import XLNetForQA
-from model.adamGN import AdamwithGradientNormalization
 from data.qa import SQuADTransform, convert_examples_to_inputs
 from transformer import model
 from xlnet_qa_evaluate import predict_extended
@@ -125,7 +124,7 @@ parser.add_argument('--test_batch_size',
 
 parser.add_argument('--optimizer',
                     type=str,
-                    default='AdamwithGradientNormalization',
+                    default='bertadam',
                     help='optimization algorithm. default is bertadam')
 
 parser.add_argument(
@@ -273,7 +272,8 @@ batchify_fn = nlp.data.batchify.Tuple(
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
     nlp.data.batchify.Stack('float32'),
-    nlp.data.batchify.Stack('float32'))
+    nlp.data.batchify.Stack('float32'),
+    nlp.data.batchify.Stack('int32'))
 
 if pretrained_xlnet_parameters:
     # only load XLnetModel parameters
@@ -465,7 +465,7 @@ def train():
             batch_loss_sep = []
             with mx.autograd.record():
                 for splited_data in data_list:
-                    _, inputs, token_types, valid_length, p_mask, start_label, end_label, _is_impossible = splited_data  # pylint: disable=line-too-long
+                    _, inputs, token_types, valid_length, p_mask, start_label, end_label, _is_impossible, _ = splited_data  # pylint: disable=line-too-long
                     valid_length = valid_length.astype('float32')
                     is_impossible = _is_impossible if args.version_2 else None
                     log_num += len(inputs)
@@ -498,7 +498,6 @@ def train():
                 step_loss_span += step_loss_sep_tmp[0] / len(ctx)
                 step_loss_cls += step_loss_sep_tmp[1] / len(ctx)
 
-            mx.optimizer.Adam
             step_loss += sum([ls.asscalar() for ls in batch_loss])
             if (batch_id + 1) % log_interval == 0:
                 toc = time.time()
@@ -541,7 +540,7 @@ def train():
 
 RawResultExtended = collections.namedtuple('RawResultExtended', [
     'start_top_log_probs', 'start_top_index', 'end_top_log_probs',
-    'end_top_index', 'cls_logits'
+    'end_top_index', 'cls_logits', 'doc_span_index'
 ])
 
 
@@ -600,7 +599,7 @@ def evaluate(prefix=''):
     for (batch_id, data) in enumerate(dev_dataloader):
         data_list = list(split_and_load(data, ctx))
         for splited_data in data_list:
-            example_ids, inputs, token_types, valid_length, p_mask, _, _, _ = splited_data
+            example_ids, inputs, token_types, valid_length, p_mask, _, _, _, doc_span_index = splited_data
             total_num += len(inputs)
             outputs = net_eval(inputs,
                                token_types,
@@ -614,7 +613,8 @@ def evaluate(prefix=''):
                     end_top_log_probs=outputs[2][c].asnumpy().tolist(),
                     end_top_index=outputs[3][c].asnumpy().tolist(),
                     cls_logits=outputs[4][c].asnumpy().tolist()
-                    if outputs[4] is not None else [-1e30])
+                    if outputs[4] is not None else [-1e30],
+                    doc_span_index=doc_span_index[c])
                 all_results[example_ids].append(result)
         if batch_id % args.log_interval == 0:
             log.info('Batch: %d/%d', batch_id + 1, len(dev_dataloader))

@@ -63,6 +63,7 @@ def predict_extended(features,
     prelim_predictions = []
     score_null = 1000000  # large and positive
     for features_id, (result, feature) in enumerate(zip(results, features)):
+        assert result.doc_span_index == feature.doc_span_index
         cur_null_score = result.cls_logits[0]
         score_null = min(score_null, cur_null_score)
         for i in range(start_n_top):
