@@ -102,7 +102,6 @@ parser.add_argument('--seed', type=int, default=2, help='Random seed')
 # I/O config
 parser.add_argument('--output_dir', type=str, default='./output_dir',
                     help='The output directory where the model params will be written.')
-parser.add_argument('--load_from_pickle', action='store_true', help='load features from file if set')
 parser.add_argument(
     '--model_parameters', type=str, default=None,
     help='A parameter file for the model that is loaded into the model'
