@@ -15,7 +15,6 @@ import mxnet as mx
 from mxnet import gluon
 import gluonnlp as nlp
 from model.XLNet_classifier import XLNetClassifier
-from model.adamGN import AdamwithGradientNormalization
 from transformer import model
 
 os.environ['MXNET_USE_FUSION'] = '0'
@@ -45,69 +44,77 @@ parser = argparse.ArgumentParser(
     description='XLNet fine-tune examples for classification/regression tasks.',
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
+# Training config
 parser.add_argument('--epochs', type=int, default=3, help='number of epochs.')
 
 parser.add_argument('--batch_size', type=int, default=128,
                     help='Batch size. Number of examples per gpu in a minibatch.')
 
-parser.add_argument('--dev_batch_size', type=int, default=32,
-                    help='Batch size for dev set and test set')
-
-parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
-
-parser.add_argument('--epsilon', type=float, default=1e-6,
-                    help='Small value to avoid division by 0')
-parser.add_argument('--warmup_ratio', type=float, default=0,
-                    help='ratio of warmup steps used in NOAM\'s stepsize schedule')
-parser.add_argument('--log_interval', type=int, default=10, help='report interval')
-parser.add_argument('--max_len', type=int, default=128, help='Maximum length of the sentence pairs')
-
-parser.add_argument(
-    '--pad', default=True, action='store_true',
-    help='Whether to pad to maximum length when preparing data batches. '
-    'Have to be true currently due to left padding')
-
-parser.add_argument('--seed', type=int, default=2, help='Random seed')
-
 parser.add_argument(
     '--accumulate', type=int, default=None,
     help='The number of batches for gradients accumulation to simulate large batch size. '
     'Default is None')
-parser.add_argument('--gpu', type=int, default=None, help='Number of gpus for finetuning.')
-parser.add_argument('--cpu', type=int, default=None, help='Number of cpus for finetuning.')
-parser.add_argument('--task_name', default='MRPC', type=str,
-                    help='The name of the task to fine-tune.')
 
-parser.add_argument('--model_name', type=str, default='xlnet_cased_l24_h1024_a16',
-                    choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
-                    help='The name of pre-trained XLNet model to fine-tune')
+parser.add_argument('--dev_batch_size', type=int, default=32,
+                    help='Batch size for dev set and test set')
 
-parser.add_argument('--dataset', type=str, default='126gb',
-                    help='The dataset BERT pre-trained with.')
-
-parser.add_argument('--output_dir', type=str, default='./output_dir',
-                    help='The output directory where the model params will be written.')
-
-parser.add_argument(
-    '--only_inference', action='store_true',
-    help='If set, we skip training and only perform inference on dev and test data.')
-
-parser.add_argument(
-    '--model_parameters', type=str, default=None,
-    help='A parameter file for the model that is loaded into the model'
-    ' before training/inference. It is different from the parameter'
-    ' file written after the model is trained.')
-
+parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
+parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
+parser.add_argument('--log_interval', type=int, default=10, help='report interval')
 parser.add_argument(
     '--early_stop', type=int, default=None,
     help='Whether to perform early stopping based on the metric on dev set. '
     'The provided value is the patience. ')
 
-parser.add_argument('--dropout', type=float, default=0.1, help='dropout')
-parser.add_argument('--attention_dropout', type=float, default=0.1, help='attention dropout')
+# Optimizer config
+parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer')
+parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
 parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
-parser.add_argument('--training_steps', type=int , help='training steps')
-parser.add_argument('--optimizer', type=str, default='AdamwithGradientNormalization')
+parser.add_argument('--epsilon', type=float, default=1e-6,
+                    help='Small value to avoid division by 0')
+parser.add_argument('--warmup_ratio', type=float, default=0,
+                    help='ratio of warmup steps used in NOAM\'s stepsize schedule')
+
+# task spesific & data preprocessing
+parser.add_argument('--gpu', type=int, default=None, help='Number of gpus for finetuning.')
+parser.add_argument('--task_name', default='MRPC', type=str,
+                    help='The name of the task to fine-tune.')
+
+parser.add_argument('--model_name', type=str, default='xlnet_cased_l12_h768_a12',
+                    choices=['xlnet_cased_l24_h1024_a16', 'xlnet_cased_l12_h768_a12'],
+                    help='The name of pre-trained XLNet model to fine-tune')
+
+parser.add_argument('--dataset', type=str, default='126gb',
+                    help='The dataset BERT pre-trained with.')
+parser.add_argument('--max_len', type=int, default=128, help='Maximum length of the sentence pairs')
+parser.add_argument(
+    '--pad', default=True, action='store_true',
+    help='Whether to pad to maximum length when preparing data batches. '
+    'Have to be true currently due to left padding')
+
+parser.add_argument(
+    '--only_inference', action='store_true',
+    help='If set, we skip training and only perform inference on dev and test data.')
+
+# Initializing config
+parser.add_argument('--seed', type=int, default=2, help='Random seed')
+
+# I/O config
+parser.add_argument('--output_dir', type=str, default='./output_dir',
+                    help='The output directory where the model params will be written.')
+parser.add_argument('--load_from_pickle', action='store_true', help='load features from file if set')
+parser.add_argument(
+    '--model_parameters', type=str, default=None,
+    help='A parameter file for the model that is loaded into the model'
+    ' before training/inference. It is different from the parameter'
+    ' file written after the model is trained.')
+parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
+parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
+parser.add_argument('--epsilon', type=float, default=1e-6,
+                    help='Small value to avoid division by 0')
+parser.add_argument('--warmup_ratio', type=float, default=0,
+                    help='ratio of warmup steps used in NOAM\'s stepsize schedule')
+
 args = parser.parse_args()
 
 
@@ -367,7 +374,7 @@ def train(metric):
     epoch_number = args.epochs
     if args.training_steps:
         num_train_steps = args.training_steps
-        epoch_number = 999
+        epoch_number = 9999
     logging.info('training steps=%fs', num_train_steps)
     warmup_ratio = args.warmup_ratio
     num_warmup_steps = int(num_train_steps * warmup_ratio)
@@ -504,7 +511,7 @@ def evaluate(loader_dev, metric, segment):
             input_ids, valid_length, segment_ids, label = splited_data
             out = model(input_ids, segment_ids, valid_length=valid_length)
             batch_loss.append(loss_function(out, label).mean() / len(ctxs))
-            if args.task != 'STS-B':
+            if do_regression:
                 label = label.reshape((-1))
             out_list.append(out.as_in_context(mx.cpu(0)))
             label_list.append(label.as_in_context(mx.cpu(0)))
