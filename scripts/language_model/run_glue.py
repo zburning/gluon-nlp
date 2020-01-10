@@ -69,7 +69,7 @@ parser.add_argument(
 # Optimizer config
 parser.add_argument('--optimizer', type=str, default='Adam', help='')
 parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
-parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
+parser.add_argument('--lr_decay', type=str, choices=['linear'], default='linear', help='lr schedule')
 parser.add_argument('--epsilon', type=float, default=1e-6,
                     help='Small value to avoid division by 0')
 parser.add_argument('--warmup_ratio', type=float, default=0,
