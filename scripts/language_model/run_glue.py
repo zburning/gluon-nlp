@@ -67,7 +67,7 @@ parser.add_argument(
     'The provided value is the patience. ')
 
 # Optimizer config
-parser.add_argument('--optimizer', type=str, default='Adam', help='optimizer')
+parser.add_argument('--optimizer', type=str, default='Adam', help='')
 parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
 parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
 parser.add_argument('--epsilon', type=float, default=1e-6,
@@ -108,12 +108,6 @@ parser.add_argument(
     help='A parameter file for the model that is loaded into the model'
     ' before training/inference. It is different from the parameter'
     ' file written after the model is trained.')
-parser.add_argument('--lr', type=float, default=3e-5, help='Initial learning rate')
-parser.add_argument('--lr_decay', type=str, default='linear', help='lr decay')
-parser.add_argument('--epsilon', type=float, default=1e-6,
-                    help='Small value to avoid division by 0')
-parser.add_argument('--warmup_ratio', type=float, default=0,
-                    help='ratio of warmup steps used in NOAM\'s stepsize schedule')
 
 args = parser.parse_args()
 
