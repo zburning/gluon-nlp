@@ -369,7 +369,7 @@ def train(metric):
     if args.training_steps:
         num_train_steps = args.training_steps
         epoch_number = 9999
-    logging.info('training steps=%fs', num_train_steps)
+    logging.info('training steps=%d', num_train_steps)
     warmup_ratio = args.warmup_ratio
     num_warmup_steps = int(num_train_steps * warmup_ratio)
     step_num = 0
