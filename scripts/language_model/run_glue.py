@@ -46,7 +46,7 @@ parser = argparse.ArgumentParser(
 
 # Training config
 parser.add_argument('--epochs', type=int, default=3, help='number of epochs.')
-parser.add_argument('training_steps', type=int, help='If specified, epochs will be ignored.')
+parser.add_argument('--training_steps', type=int, help='If specified, epochs will be ignored.')
 parser.add_argument('--batch_size', type=int, default=128,
                     help='Batch size. Number of examples per gpu in a minibatch.')
 
