@@ -351,15 +351,19 @@ def _apply_gradient_decay():
     layer-wise gradient decay. Gradient decay and learning rate decay could be the
     same by using standard SGD, but different by using Adaptive optimizer(e.g., Adam).
     """
-
+    parameter_not_included = ['seg_emb', 'query_key_bias', 'query_emb_bias', 'query_seg_bias']
     num_layers = len(xlnet_base._net.transformer_cells)
     for (i, layer_parameters) in enumerate(xlnet_base._net.transformer_cells):
         layer_params = layer_parameters.collect_params()
         for key, value in layer_params.items():
-            if 'seg_emb' in key:
-                # segment embeddings are not included
+            skip = False
+            for pn in parameter_not_included:
+                if pn in key:
+                    skip = True
+            if skip:
                 continue
             if value.grad_req != 'null':
+                #print("apply {} to parameter {}".format(args.layerwise_decay**(num_layers - i - 1), key))
                 for arr in value.list_grad():
                     arr *= args.layerwise_decay**(num_layers - i - 1)
 
