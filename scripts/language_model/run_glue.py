@@ -626,6 +626,11 @@ def train(metric):
         nlp.utils.load_parameters(model, params_saved)
         metric_str = 'Best model at epoch {}. Validation metrics:'.format(
             epoch_id + 1)
+        with open('seed_search_' + args.task_name, 'a+') as file:
+            tmp = 'Best model at epoch {}. Validation metrics:'.format(
+            epoch_id + 1)
+            tmp += ', '.join(list(map(str, metric_nm)))
+            file.write(tmp + " seed: " + str(args.seed) + '\n')
         metric_str += ','.join([i + ':%.4f' for i in metric_nm])
         logging.info(metric_str, *metric_val)
 
