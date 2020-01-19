@@ -629,7 +629,7 @@ def train(metric):
         with open('seed_search_' + args.task_name, 'a+') as file:
             tmp = 'Best model at epoch {}. Validation metrics:'.format(
             epoch_id + 1)
-            tmp += ', '.join(list(map(str, metric_nm)))
+            tmp += ', '.join(list(map(str, metric_val)))
             file.write(tmp + " seed: " + str(args.seed) + '\n')
         metric_str += ','.join([i + ':%.4f' for i in metric_nm])
         logging.info(metric_str, *metric_val)

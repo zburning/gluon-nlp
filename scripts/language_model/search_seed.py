@@ -13,6 +13,7 @@ parser.add_argument(
     help='task name')
 parser.add_argument('--training_steps',
                     type=int,
+                    default=800,
                     help='If specified, epochs will be ignored.')
 args = parser.parse_args()
 
