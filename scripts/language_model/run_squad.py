@@ -708,9 +708,8 @@ def train():
             batch_loss_sep = []
             with mx.autograd.record():
                 for splited_data in data_list:
-                    _, inputs, token_types, valid_length, p_mask, start_label, end_label, _is_impossible = splited_data  # pylint: disable=line-too-long
+                    _, inputs, token_types, valid_length, p_mask, start_label, end_label, is_impossible = splited_data  # pylint: disable=line-too-long
                     valid_length = valid_length.astype('float32')
-                    is_impossible = _is_impossible if args.version_2 else None
                     log_num += len(inputs)
                     total_num += len(inputs)
                     out_sep, out = net(
@@ -846,8 +845,7 @@ def evaluate(prefix=''):
                     start_top_index=outputs[1][c].asnumpy().tolist(),
                     end_top_log_probs=outputs[2][c].asnumpy().tolist(),
                     end_top_index=outputs[3][c].asnumpy().tolist(),
-                    cls_logits=outputs[4][c].asnumpy().tolist()
-                    if outputs[4] is not None else [-1e30])
+                    cls_logits=outputs[4][c].asnumpy().tolist())
                 all_results[example_ids].append(result)
         if batch_id % args.log_interval == 0:
             log.info('Batch: %d/%d', batch_id + 1, len(dev_dataloader))
