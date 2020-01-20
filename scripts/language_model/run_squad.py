@@ -28,7 +28,7 @@ from utils_squad_evaluate import EVAL_OPTS, main as evaluate_on_squad
 path = sys.path[0]
 sys.path.append(path + '/../bert/data')
 #pylint: disable=wrong-import-position
-from preprocessing_utils import concat_sequences_extended, get_doc_spans, \
+from preprocessing_utils import concat_sequences, get_doc_spans, \
     check_is_max_context, convert_squad_examples, _lcs_match, _convert_index, \
     align_position2doc_spans
 
@@ -441,7 +441,7 @@ def convert_examples_to_features(example,
 
     # get sequence features: tokens, segment_ids, p_masks
     seq_features = [
-        concat_sequences_extended(
+        concat_sequences(
             [doc_span, query_tokenized], [[sep_token]] * 2 + [[cls_token]],
             [[0] * len(doc_span), [1] * len(query_tokenized)], [[1], [1], [0]])
         for doc_span in doc_spans
