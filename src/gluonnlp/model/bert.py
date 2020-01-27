@@ -29,6 +29,7 @@ import mxnet as mx
 from mxnet.gluon import HybridBlock, nn
 from mxnet.gluon.model_zoo import model_store
 
+from mxnet.contrib.amp import amp
 from ..base import get_home_dir
 from .block import GELU
 from .seq2seq_encoder_decoder import Seq2SeqEncoder
