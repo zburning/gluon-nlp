@@ -198,16 +198,15 @@ class DotProductSelfAttentionCell(HybridBlock):
                                     num_hidden=self.units*3, no_bias=False, flatten=False)
         att_score = F.contrib.interleaved_matmul_selfatt_qk(qkv_proj, heads=self._num_heads)
 
-        # if valid_len is not None:
-        #     valid_len = F.broadcast_axis(F.expand_dims(valid_len, axis=1),
-        #                                  axis=1, size=self._num_heads)
-        #     valid_len = valid_len.reshape(shape=(-1, 0), reverse=True)
+        if valid_len is not None:
+             valid_len = F.broadcast_axis(F.expand_dims(valid_len, axis=1),
+                                          axis=1, size=self._num_heads)
+             valid_len = valid_len.reshape(shape=(-1, 0), reverse=True)
+             mask = F.SequenceMask(att_score, valid_len, use_sequence_length=True)
         #     att_weights = F.softmax(att_score, length=valid_len, use_length=True, axis=-1)
         # else:
         #     att_weights = F.softmax(att_score, axis=-1)
         # att_weights shape = (batch_size, seq_length, seq_length)
-        print("attn_score: shape", att_score.shape)
-        mask = self._padding_mask(F, att_score, valid_len)
         print("mask shape: ", mask.shape)
         att_weights = _masked_softmax(F, att_score, mask, np.float32)
         att_weights = self.dropout_layer(att_weights)
