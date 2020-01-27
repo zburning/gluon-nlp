@@ -192,7 +192,7 @@ class DotProductSelfAttentionCell(HybridBlock):
         if valid_len is not None:
              valid_len = F.broadcast_axis(F.expand_dims(valid_len, axis=1),
                                           axis=1, size=self._num_heads)
-             valid_len = valid_len.reshape(shape=(-1, 0), reverse=True)
+             valid_len = valid_len.reshape(shape=(-1,), reverse=True)
              mask = F.SequenceMask(att_score_t, valid_len, use_sequence_length=True)
              mask =  mx.nd.transpose(mask, axes=(1, 0, 2))
         att_weights = _masked_softmax(F, att_score, mask, np.float32)
