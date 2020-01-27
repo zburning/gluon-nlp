@@ -23,6 +23,8 @@ __all__ = ['BERTModel', 'RoBERTaModel', 'BERTEncoder', 'BERTClassifier',
 
 import os
 
+import numpy as np
+
 import mxnet as mx
 from mxnet.gluon import HybridBlock, nn
 from mxnet.gluon.model_zoo import model_store
@@ -204,7 +206,7 @@ class DotProductSelfAttentionCell(HybridBlock):
         #     att_weights = F.softmax(att_score, axis=-1)
         # att_weights shape = (batch_size, seq_length, seq_length)
         mask = self._padding_mask(F, att_score, valid_len)
-        att_weights = _masked_softmax(att_score, mask)
+        att_weights = _masked_softmax(F, att_score, mask, np.float32)
         att_weights = self.dropout_layer(att_weights)
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
                                                                   heads=self._num_heads)
