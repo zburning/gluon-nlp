@@ -184,8 +184,8 @@ class DotProductSelfAttentionCell(HybridBlock):
         ones = F.ones_like(steps)
         mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
                                   F.reshape(valid_length, shape=(-1, 1)))
-        # mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
-        #                        F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
+        mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
+                               F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
         return mask
 
     # pylint: disable=arguments-differ
@@ -206,6 +206,7 @@ class DotProductSelfAttentionCell(HybridBlock):
         # else:
         #     att_weights = F.softmax(att_score, axis=-1)
         # att_weights shape = (batch_size, seq_length, seq_length)
+        print("attn_score: shape", att_score.shape)
         mask = self._padding_mask(F, att_score, valid_len)
         print("mask shape: ", mask.shape)
         att_weights = _masked_softmax(F, att_score, mask, np.float32)
