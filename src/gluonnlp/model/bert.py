@@ -178,16 +178,6 @@ class DotProductSelfAttentionCell(HybridBlock):
             ret.update(child._collect_params_with_prefix(prefix + name))
         return ret
 
-    def _padding_mask(self, F, inputs, valid_length):
-        valid_length = valid_length.astype(np.float32)
-        steps = F.contrib.arange_like(inputs, axis=1)
-        ones = F.ones_like(steps)
-        mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
-                                  F.reshape(valid_length, shape=(-1, 1)))
-        mask = F.broadcast_mul(F.expand_dims(mask, axis=1),
-                               F.broadcast_mul(ones, F.reshape(ones, shape=(-1, 1))))
-        return mask
-
     # pylint: disable=arguments-differ
     def hybrid_forward(self, F, qkv, valid_len, query_bias, key_bias, value_bias,
                        query_weight, key_weight, value_weight):
@@ -196,18 +186,16 @@ class DotProductSelfAttentionCell(HybridBlock):
         # qkv_proj shape = (seq_length, batch_size, num_heads * head_dim * 3)
         qkv_proj = F.FullyConnected(data=qkv, weight=in_weight, bias=in_bias,
                                     num_hidden=self.units*3, no_bias=False, flatten=False)
+        mx.nd.contrib.interleaved_matmul_selfatt_qk
         att_score = F.contrib.interleaved_matmul_selfatt_qk(qkv_proj, heads=self._num_heads)
-
+        att_score_t = mx.nd.transpose(att_score, axes=(1, 0, 2))
         if valid_len is not None:
              valid_len = F.broadcast_axis(F.expand_dims(valid_len, axis=1),
                                           axis=1, size=self._num_heads)
              valid_len = valid_len.reshape(shape=(-1, 0), reverse=True)
-             mask = F.SequenceMask(att_score, valid_len, use_sequence_length=True)
-        #     att_weights = F.softmax(att_score, length=valid_len, use_length=True, axis=-1)
-        # else:
-        #     att_weights = F.softmax(att_score, axis=-1)
-        # att_weights shape = (batch_size, seq_length, seq_length)
-        print("mask shape: ", mask.shape)
+             mask = F.SequenceMask(att_score_t, valid_len, use_sequence_length=True)
+             mask =  mx.nd.transpose(mask axes=(1, 0, 2))
+        print("mask shape", mask.shape)
         att_weights = _masked_softmax(F, att_score, mask, np.float32)
         att_weights = self.dropout_layer(att_weights)
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
@@ -447,19 +435,19 @@ class BERTEncoder(HybridBlock, Seq2SeqEncoder):
         """
         # axis 0 is for length
         steps = F.contrib.arange_like(inputs, axis=0)
-        if valid_length is not None:
-            zeros = F.zeros_like(steps)
-            # valid_length for attention, shape = (batch_size, seq_length)
-            attn_valid_len = F.broadcast_add(F.reshape(valid_length, shape=(-1, 1)),
-                                             F.reshape(zeros, shape=(1, -1)))
-            attn_valid_len = F.cast(attn_valid_len, dtype='int32')
-            if states is None:
-                states = [attn_valid_len]
-            else:
-                states.append(attn_valid_len)
-        else:
-            attn_valid_len = None
-
+        # if valid_length is not None:
+        #     zeros = F.zeros_like(steps)
+        #     # valid_length for attention, shape = (batch_size, seq_length)
+        #     attn_valid_len = F.broadcast_add(F.reshape(valid_length, shape=(-1, 1)),
+        #                                      F.reshape(zeros, shape=(1, -1)))
+        #     attn_valid_len = F.cast(attn_valid_len, dtype='int32')
+        #     if states is None:
+        #         states = [attn_valid_len]
+        #     else:
+        #         states.append(attn_valid_len)
+        # else:
+        #     attn_valid_len = None
+        attn_valid_len = valid_length
         if states is None:
             states = [steps]
         else:
