@@ -162,7 +162,7 @@ class DotProductSelfAttentionCell(HybridBlock):
 
     def _padding_mask(self, inputs, valid_length):
         F = mx.ndarray
-        valid_length = valid_length.astype(inputs.dtype)
+        valid_length = valid_length.astype('int32')
         steps = F.contrib.arange_like(inputs, axis=1)
         ones = F.ones_like(steps)
         mask = F.broadcast_lesser(F.reshape(steps, shape=(1, -1)),
