@@ -194,8 +194,7 @@ class DotProductSelfAttentionCell(HybridBlock):
                                           axis=1, size=self._num_heads)
              valid_len = valid_len.reshape(shape=(-1, 0), reverse=True)
              mask = F.SequenceMask(att_score_t, valid_len, use_sequence_length=True)
-             mask =  mx.nd.transpose(mask axes=(1, 0, 2))
-        print("mask shape", mask.shape)
+             mask =  mx.nd.transpose(mask, axes=(1, 0, 2))
         att_weights = _masked_softmax(F, att_score, mask, np.float32)
         att_weights = self.dropout_layer(att_weights)
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
