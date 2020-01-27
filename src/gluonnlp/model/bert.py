@@ -175,8 +175,7 @@ class DotProductSelfAttentionCell(HybridBlock):
             ret.update(child._collect_params_with_prefix(prefix + name))
         return ret
 
-    def _padding_mask(self, inputs, valid_length):
-        F = mx.ndarray
+    def _padding_mask(self, F, inputs, valid_length):
         valid_length = valid_length.astype('int32')
         steps = F.contrib.arange_like(inputs, axis=1)
         ones = F.ones_like(steps)
@@ -204,7 +203,7 @@ class DotProductSelfAttentionCell(HybridBlock):
         # else:
         #     att_weights = F.softmax(att_score, axis=-1)
         # att_weights shape = (batch_size, seq_length, seq_length)
-        mask = self._padding_mask(att_score, valid_len)
+        mask = self._padding_mask(F, att_score, valid_len)
         att_weights = _masked_softmax(att_score, mask)
         att_weights = self.dropout_layer(att_weights)
         context_vec = F.contrib.interleaved_matmul_selfatt_valatt(qkv_proj, att_weights,
