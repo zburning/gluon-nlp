@@ -95,7 +95,7 @@ class PoolerEndLogits(HybridBlock):
         return x
 
 
-class XLNetPoolerAnswerClass(Block):
+class XLNetPoolerAnswerClass(HybridBlock):
     """ Compute SQuAD 2.0 answer class from classification and start tokens hidden states. """
     def __init__(self, units=768, dropout=0.1, prefix=None, params=None):
         super(XLNetPoolerAnswerClass, self).__init__(prefix=prefix,
@@ -118,7 +118,7 @@ class XLNetPoolerAnswerClass(Block):
         return super(XLNetPoolerAnswerClass,
                      self).__call__(hidden_states, start_states, cls_index)
 
-    def forward(self, hidden_states, start_states, cls_index):
+    def hybrid_forward(self, F, hidden_states, start_states, cls_index):
         # pylint: disable=arguments-differ
         """Get answerability logits from the model output and start states.
 
@@ -135,7 +135,6 @@ class XLNetPoolerAnswerClass(Block):
         x : NDarray, shape(batch_size,)
             CLS logits.
         """
-        F = mx.ndarray
         index = F.contrib.arange_like(hidden_states,
                                       axis=0,
                                       ctx=hidden_states.context).expand_dims(1)
