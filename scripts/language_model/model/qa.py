@@ -138,7 +138,7 @@ class XLNetPoolerAnswerClass(HybridBlock):
         index = F.contrib.arange_like(hidden_states,
                                       axis=0).expand_dims(1)
         valid_length_rs = cls_index.reshape((-1, 1)) - 1
-        gather_index = F.concat(index, valid_length_rs).T
+        gather_index = F.transpose(F.concat(index, valid_length_rs), axes=(1, 0))
         cls_token_state = F.gather_nd(hidden_states, gather_index)
 
         x = self.dense_0(F.concat(start_states, cls_token_state, dim=-1))
