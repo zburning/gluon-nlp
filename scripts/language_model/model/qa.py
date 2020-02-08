@@ -136,8 +136,7 @@ class XLNetPoolerAnswerClass(HybridBlock):
             CLS logits.
         """
         index = F.contrib.arange_like(hidden_states,
-                                      axis=0,
-                                      ctx=hidden_states.context).expand_dims(1)
+                                      axis=0).expand_dims(1)
         valid_length_rs = cls_index.reshape((-1, 1)) - 1
         gather_index = F.concat(index, valid_length_rs).T
         cls_token_state = F.gather_nd(hidden_states, gather_index)
